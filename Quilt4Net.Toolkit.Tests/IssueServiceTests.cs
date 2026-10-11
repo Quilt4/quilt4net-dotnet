@@ -105,6 +105,34 @@ public class IssueServiceTests
     }
 
     [Fact]
+    public async Task A_response_without_a_plan_reads_as_no_plan()
+    {
+        // An older server sends no "plan" at all. That must read as an empty plan, not a failure.
+        var sut = CreateSut(new RecordingHandler(_ => Json(SampleIssue)));
+
+        var issue = await sut.GetAsync(1, TestContext.Current.CancellationToken);
+
+        issue.Plan.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_plan_travels_both_ways()
+    {
+        string body = null;
+        var handler = new RecordingHandler(r =>
+        {
+            body = r.Content!.ReadAsStringAsync().Result;
+            return Json(SampleIssue.Replace("\"content\":\"\"", "\"content\":\"\",\"plan\":\"## Steps\\n- [ ] one\""));
+        });
+        var sut = CreateSut(handler);
+
+        var issue = await sut.UpdateAsync(1, new UpdateIssueRequest { Title = "t", Plan = "## Steps\n- [ ] one" }, TestContext.Current.CancellationToken);
+
+        body.Should().Contain("\"plan\":\"## Steps\\n- [ ] one\"");
+        issue.Plan.Should().Be("## Steps\n- [ ] one");
+    }
+
+    [Fact]
     public async Task A_failure_throws_and_carries_the_status_code()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)

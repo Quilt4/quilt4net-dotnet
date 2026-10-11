@@ -27,6 +27,18 @@ public record UpdateIssueRequest
     /// <summary>Body text. Cleared when omitted.</summary>
     public string Content { get; init; }
 
+    /// <summary>
+    /// The plan, as markdown. <b>The one exception to replace semantics:</b> <c>null</c> leaves the
+    /// stored plan as it is, and an empty string clears it.
+    /// </summary>
+    /// <remarks>
+    /// The plan was added after this contract shipped, so a client built before it cannot send one.
+    /// Under replace semantics every edit from such a client would wipe the plan without it ever
+    /// knowing the field existed. "Absent means unchanged" is the only reading that is safe for a
+    /// field older clients do not know about, and the empty string still gives a way to clear it.
+    /// </remarks>
+    public string Plan { get; init; }
+
     /// <summary>Route (roadmap lane). Cleared when omitted, which takes the issue off the map.</summary>
     public string Route { get; init; }
 
