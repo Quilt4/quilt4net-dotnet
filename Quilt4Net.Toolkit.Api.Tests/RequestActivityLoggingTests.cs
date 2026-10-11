@@ -49,9 +49,19 @@ public class RequestActivityLoggingTests
         {
             //NOTE: TestServer rethrows an unhandled handler exception to the client.
         }
+        //NOTE: When the handler throws, TestServer hands the exception to the client before hosting has
+        // disposed the request context, which is where the span is stopped. Wait for it rather than race it.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        Activity activity;
+        while ((activity = stopped.SingleOrDefault(a => a.OperationName == "Microsoft.AspNetCore.Hosting.HttpRequestIn")) == null
+               && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
         await app.StopAsync();
 
-        return (response, stopped.SingleOrDefault(a => a.OperationName == "Microsoft.AspNetCore.Hosting.HttpRequestIn"));
+        return (response, activity);
     }
 
     [Fact]
