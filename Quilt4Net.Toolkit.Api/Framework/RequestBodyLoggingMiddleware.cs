@@ -156,7 +156,9 @@ public class RequestResponseLoggingMiddleware
         var activity = context.Features.Get<IHttpActivityFeature>()?.Activity ?? Activity.Current;
         if (telemetry == null && activity == null)
         {
-            _logger.LogDebug("No request telemetry or request activity for {Path}, so request data cannot be attached to AppRequests.", context.Request.Path);
+            //NOTE: The path is caller supplied. Line breaks are stripped so it cannot forge a second log line.
+            var path = context.Request.Path.Value?.Replace("\r", string.Empty).Replace("\n", string.Empty);
+            _logger.LogDebug("No request telemetry or request activity for {Path}, so request data cannot be attached to AppRequests.", path);
             return null;
         }
 
