@@ -12,6 +12,12 @@ public record CreateIssueRequest
     public string Content { get; init; }
 
     /// <summary>
+    /// How the issue will be delivered, as markdown: spec, step checklist, decisions, session log.
+    /// Optional. <see cref="Content"/> stays the short what and why; the plan is the long part.
+    /// </summary>
+    public string Plan { get; init; }
+
+    /// <summary>
     /// The route (roadmap lane) this issue belongs to. Optional — an issue with no route is tracked
     /// but does not appear on the map.
     /// </summary>
