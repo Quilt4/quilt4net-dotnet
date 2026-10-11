@@ -18,8 +18,10 @@ public record LoggingOptions
 
     /// <summary>
     /// Add logger for Http request and response with body, headers, query and results.
-    /// Default is append to Application Insights requests.
-    /// Remember to also add 'builder.Logging.AddApplicationInsights();' at startup and add connection string, if you are using ApplicationInsights.
+    /// Default is append to Application Insights requests (customDimensions on AppRequests).
+    /// That needs something recording the ASP.NET Core request with a connection string: Application Insights
+    /// (<c>AddApplicationInsightsTelemetry</c>) or the Azure Monitor OpenTelemetry exporter.
+    /// <see cref="HttpRequestLogMode.Logger"/> writes to AppTraces through <c>ILogger</c> instead.
     /// </summary>
     public HttpRequestLogMode LogHttpRequest { get; set; } = HttpRequestLogMode.ApplicationInsights;
 

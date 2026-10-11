@@ -95,10 +95,12 @@ builder.AddQuilt4NetLogging()
 | Value | Description |
 |-------|-------------|
 | `None` | No logging. |
-| `ApplicationInsights` | Append request/response data to Application Insights request telemetry. |
-| `Logger` | Log via the standard `ILogger` pipeline. |
+| `ApplicationInsights` | Append request/response data to the request row (`customDimensions` on `AppRequests`). |
+| `Logger` | Log via the standard `ILogger` pipeline (`AppTraces`). |
 
 Values can be combined with `|` to log to multiple destinations.
+
+`ApplicationInsights` writes the data as tags on the ASP.NET Core request span, which Application Insights SDK 3.x (`AddApplicationInsightsTelemetry`) and the Azure Monitor OpenTelemetry exporter both export into `customDimensions`. It also still fills `RequestTelemetry` for hosts on the 2.x SDK. With nothing recording requests, there is no request row and nothing is written. You do not need `builder.Logging.AddApplicationInsights()`; that method only existed in the 2.x logging package and only affected traces.
 
 ## Path filtering
 

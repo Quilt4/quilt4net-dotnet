@@ -1,4 +1,5 @@
 ﻿using Microsoft.ApplicationInsights.DataContracts;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Options;
 using Quilt4Net.Toolkit.Features.Measure;
@@ -66,7 +67,7 @@ public class RequestResponseLoggingMiddleware
         var details = BuildDetails();
 
         var sw = new Stopwatch();
-        var telemetry = GetRequestTelemetry(context);
+        var target = GetRequestTarget(context);
 
         try
         {
@@ -76,10 +77,10 @@ public class RequestResponseLoggingMiddleware
                 context.Response.Body = responseBodyStream;
             }
 
-            if (telemetry != null)
+            if (target != null)
             {
-                telemetry.Properties["UserId"] = context.User.Identity?.Name ?? "Anonymous";
-                if (!string.IsNullOrEmpty(correlationId)) telemetry.Properties["CorrelationId"] = correlationId;
+                target.Set("UserId", context.User.Identity?.Name ?? "Anonymous");
+                if (!string.IsNullOrEmpty(correlationId)) target.Set("CorrelationId", correlationId);
                 // ApplicationName + Version intentionally not duplicated here — AddQuilt4NetLogging
                 // attaches service.name / service.version to every record/span via OTel processors,
                 // which the Azure Monitor exporter forwards into customDimensions for AppRequests too.
@@ -108,12 +109,12 @@ public class RequestResponseLoggingMiddleware
             }
 
             var detailsJsonString = BuildDetailsString(details);
-            if (telemetry != null)
+            if (target != null)
             {
-                telemetry.Properties["Request"] = System.Text.Json.JsonSerializer.Serialize(requestDetails);
-                telemetry.Properties["Response"] = System.Text.Json.JsonSerializer.Serialize(responseDetails);
-                telemetry.Properties["Elapsed"] = $"{sw.Elapsed}";
-                telemetry.Properties["Details"] = detailsJsonString;
+                target.Set("Request", System.Text.Json.JsonSerializer.Serialize(requestDetails));
+                target.Set("Response", System.Text.Json.JsonSerializer.Serialize(responseDetails));
+                target.Set("Elapsed", $"{sw.Elapsed}");
+                target.Set("Details", detailsJsonString);
             }
 
             await LogRequestAndResponseAsync(requestDetails, responseDetails, sw.Elapsed, correlationId, detailsJsonString);
@@ -126,13 +127,13 @@ public class RequestResponseLoggingMiddleware
         catch (Exception e)
         {
             var detailsJsonString = BuildDetailsString(details, e);
-            if (telemetry != null)
+            if (target != null)
             {
-                telemetry.Properties["ExceptionMessage"] = e.Message;
-                telemetry.Properties["StackTrace"] = e.InnerException?.StackTrace ?? e.StackTrace;
-                telemetry.Properties["Elapsed"] = $"{sw.Elapsed}";
-                telemetry.Properties["Details"] = detailsJsonString;
-                telemetry.Success = false;
+                target.Set("ExceptionMessage", e.Message);
+                target.Set("StackTrace", e.InnerException?.StackTrace ?? e.StackTrace);
+                target.Set("Elapsed", $"{sw.Elapsed}");
+                target.Set("Details", detailsJsonString);
+                target.Fail(e.Message);
             }
 
             await LogRequestAndResponseAsync(requestDetails, null, sw.Elapsed, correlationId, detailsJsonString, e);
@@ -144,15 +145,48 @@ public class RequestResponseLoggingMiddleware
         }
     }
 
-    private RequestTelemetry GetRequestTelemetry(HttpContext context)
+    private RequestTarget GetRequestTarget(HttpContext context)
     {
-        RequestTelemetry telemetry = null;
-        if (_options?.LogHttpRequest.HasFlag(HttpRequestLogMode.ApplicationInsights) ?? false)
+        if (!(_options?.LogHttpRequest.HasFlag(HttpRequestLogMode.ApplicationInsights) ?? false)) return null;
+
+        //NOTE: Application Insights SDK 2.x put a RequestTelemetry on the HttpContext. SDK 3.x is built on
+        // OpenTelemetry and does not, so the request span is the row to write to. Its tags are exported into
+        // customDimensions on AppRequests by both the 3.x SDK and the Azure Monitor exporter.
+        var telemetry = context.Features.Get<RequestTelemetry>();
+        var activity = context.Features.Get<IHttpActivityFeature>()?.Activity ?? Activity.Current;
+        if (telemetry == null && activity == null)
         {
-            telemetry = context.Features.Get<RequestTelemetry>();
+            //NOTE: The path is caller supplied. Line breaks are stripped so it cannot forge a second log line.
+            var path = context.Request.Path.Value?.Replace("\r", string.Empty).Replace("\n", string.Empty);
+            _logger.LogDebug("No request telemetry or request activity for {Path}, so request data cannot be attached to AppRequests.", path);
+            return null;
         }
 
-        return telemetry;
+        return new RequestTarget(telemetry, activity);
+    }
+
+    internal sealed class RequestTarget
+    {
+        private readonly RequestTelemetry _telemetry;
+        private readonly Activity _activity;
+
+        public RequestTarget(RequestTelemetry telemetry, Activity activity)
+        {
+            _telemetry = telemetry;
+            _activity = activity;
+        }
+
+        public void Set(string key, string value)
+        {
+            if (_telemetry != null) _telemetry.Properties[key] = value;
+            _activity?.SetTag(key, value);
+        }
+
+        public void Fail(string description)
+        {
+            if (_telemetry != null) _telemetry.Success = false;
+            _activity?.SetStatus(ActivityStatusCode.Error, description);
+        }
     }
 
     private async Task<Request> CaptureRequestDetailsAsync(HttpContext context, bool logBody, long maxBodySize)
