@@ -643,6 +643,24 @@ public class MyAgent(IIssueService issues)
 }
 ```
 
+### Content and plan
+
+An issue has two text fields, both markdown:
+
+- **`Content`** is the short what and why: the part a reader needs to judge the issue from a list.
+- **`Plan`** is how it will be delivered: the spec, the step checklist, decisions taken on the way, the session log. It is the long part, and it lives on the issue so no plan has to sit in a file on one machine.
+
+```csharp
+await issues.CreateAsync(new CreateIssueRequest
+{
+    Title = "Bulk warm-up fans out on a shed call",
+    Content = "A shed call re-warms every key at once, which is the load the limiter exists to stop.",
+    Plan = "## Steps\n- [ ] honour Retry-After in the warm-up\n- [ ] test the shed path"
+}, ct);
+```
+
+`UpdateAsync` replaces every other field, but **not the plan**: a `null` `Plan` leaves the stored plan as it is, and an empty string clears it. The plan arrived after the update contract shipped, so a client built before it cannot send one; replacing would let every such client wipe plans without knowing the field exists.
+
 ### Importance and effort
 
 `Importance` (`Critical` / `Important` / `Nice`) and `Effort` (`S` / `M` / `L`) are the backlog's own vocabulary, so a tracker issue and a backlog row can be compared without translating between them. Together they give the house ordering rule: **importance first, then effort ascending** — highest impact for least work.

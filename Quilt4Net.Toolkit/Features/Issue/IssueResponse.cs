@@ -18,6 +18,16 @@ public record IssueResponse
     public required string Content { get; init; }
 
     /// <summary>
+    /// How the issue will be delivered, as markdown. Empty when no plan has been written.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>required</c>, for the reason spelled out on <see cref="References"/>: this ships in the
+    /// Toolkit before the Server populates it, and empty reads as "no plan", which is true of every
+    /// issue an older server returns.
+    /// </remarks>
+    public string Plan { get; init; } = string.Empty;
+
+    /// <summary>
     /// The named route this issue belongs to — the roadmap's lane. Empty when the issue belongs to
     /// no route, in which case it stays off the map.
     /// </summary>
