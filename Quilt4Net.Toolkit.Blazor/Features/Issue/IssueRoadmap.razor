@@ -13,6 +13,13 @@
     {
         <Loading Size="ProgressBarCircularSize.Small"/>
     }
+    else if (_figure.Lanes.Length == 0 && _figure.FilteredItemCount > 0)
+    {
+        <RadzenText TextStyle="TextStyle.Body1">Nothing matches the filter.</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+            @_figure.FilteredItemCount item(s) are hidden by it.
+        </RadzenText>
+    }
     else if (_figure.Lanes.Length == 0)
     {
         <RadzenText TextStyle="TextStyle.Body1">Nothing to map yet.</RadzenText>
@@ -118,14 +125,14 @@
                     </g>
                 }
 
-                @for (var band = 0; band < 3; band++)
+                @for (var column = 0; column < _figure.Columns.Length; column++)
                 {
-                    var x = RoadmapLayout.GutterWidth + band * RoadmapLayout.BandWidth;
+                    var x = RoadmapLayout.GutterWidth + column * RoadmapLayout.BandWidth;
                     <g>
                         <line x1="@N(x)" y1="0" x2="@N(x)" y2="@N(_figure.Height)"
                               stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
-                        <text x="@N(x + 12)" y="22" fill="var(--rz-text-secondary-color)"
-                              font-size="12" letter-spacing="0.08em">@BandName(band).ToUpperInvariant()</text>
+                        <text data-column x="@N(x + 12)" y="22" fill="var(--rz-text-secondary-color)"
+                              font-size="12" letter-spacing="0.08em">@_figure.Columns[column].ToUpperInvariant()</text>
                     </g>
                 }
 
@@ -232,7 +239,7 @@
 
         <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;">
             @_figure.Items.Length item(s) across @_figure.Lanes.Length route(s), @_figure.Edges.Length edge(s).
-            Snapshot @_generatedUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC. @UnroutedNote()
+            Snapshot @_generatedUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC. @UnroutedNote() @FilteredNote()
         </RadzenText>
     }
 </ConnectionWrapper>
@@ -240,6 +247,7 @@
 @code {
     private readonly string _id = $"q4n-roadmap-{Guid.NewGuid():N}";
     private RoadmapFigure _figure;
+    private RoadmapResponse _roadmap;
     private DateTime _generatedUtc;
     private int _unroutedCount;
     private int _hiddenCount;
@@ -286,7 +294,25 @@
     [Parameter]
     public IReadOnlyDictionary<string, string> MemberNames { get; set; }
 
+    /// <summary>
+    /// Which issues to draw. Leave unset to draw everything. Applied here rather than on the server,
+    /// so the projection stays one whole picture and changing the filter needs no round trip.
+    /// </summary>
+    /// <remarks>
+    /// A band the filter excludes is dropped from the map, not drawn empty. Terminal items are drawn
+    /// in a Closed column left of Now, which exists only while it holds something — so a filter
+    /// without the terminal states shows no Closed column at all.
+    /// </remarks>
+    [Parameter]
+    public IssueFilter Filter { get; set; }
+
     private bool Selectable => OnItemSelected.HasDelegate;
+
+    protected override void OnParametersSet()
+    {
+        if (_roadmap != null) _figure = RoadmapLayout.Build(_roadmap, Filter);
+        base.OnParametersSet();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -307,7 +333,8 @@
             _generatedUtc = roadmap.GeneratedUtc;
             _unroutedCount = roadmap.UnroutedCount;
             _hiddenCount = roadmap.HiddenCount;
-            _figure = RoadmapLayout.Build(roadmap);
+            _roadmap = roadmap;
+            _figure = RoadmapLayout.Build(roadmap, Filter);
         }
         catch (IssueServiceException e)
         {
@@ -328,18 +355,20 @@
     {
         var parts = new List<string>();
         if (_unroutedCount > 0) parts.Add($"{_unroutedCount} issue(s) carry no route");
-        if (_hiddenCount > 0) parts.Add($"{_hiddenCount} are routed but outside the drawn lanes, or finished and explaining no edge");
+        if (_hiddenCount > 0) parts.Add($"{_hiddenCount} are routed but outside the drawn lanes");
         return parts.Count == 0 ? string.Empty : $"Not shown: {string.Join("; ", parts)}.";
     }
 
-    private static string N(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
-
-    private static string BandName(int band) => band switch
+    /// <summary>What the filter is keeping off the map, so a filtered map is never mistaken for the whole one.</summary>
+    private string FilteredNote()
     {
-        0 => nameof(RoadmapBand.Now),
-        1 => nameof(RoadmapBand.Next),
-        _ => nameof(RoadmapBand.Later)
-    };
+        var parts = new List<string>();
+        if (_figure.FilteredItemCount > 0) parts.Add($"{_figure.FilteredItemCount} item(s)");
+        if (_figure.FilteredEdgeCount > 0) parts.Add($"{_figure.FilteredEdgeCount} edge(s)");
+        return parts.Count == 0 ? string.Empty : $"Hidden by the filter: {string.Join(", ", parts)}.";
+    }
+
+    private static string N(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
     private static string DashFor(IssueLinkKind kind) => kind switch
     {
@@ -393,7 +422,7 @@
     private static string StatusLegendFor(RoadmapStateKind kind) => kind switch
     {
         RoadmapStateKind.InProgress => "In progress — somebody is on it",
-        RoadmapStateKind.Done => "Done — drawn only where it explains an edge",
+        RoadmapStateKind.Done => "Done — drawn in the Closed column, faded",
         _ => "Not started — the workflow's entry state"
     };
 

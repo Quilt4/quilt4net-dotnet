@@ -28,14 +28,14 @@
        add). With those removed, dotnet pack now produces a nupkg with staticwebassets/, and
        consumers can fetch _content/Quilt4Net.Toolkit.Blazor/<asset> at runtime. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Authentication.WebAssembly.Msal" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Identity.Client" Version="4.88.0" />
-    <PackageReference Include="Tharga.Blazor" Version="2.3.3" />
+    <PackageReference Include="Microsoft.Authentication.WebAssembly.Msal" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.90.1" />
+    <PackageReference Include="Tharga.Blazor" Version="2.3.6" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Quilt4Net.Toolkit\Quilt4Net.Toolkit.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.12" />
   </ItemGroup>
 </Project>

@@ -25,7 +25,7 @@ public record RoadmapResponse
 
     /// <summary>
     /// Issues that <b>do</b> carry a route but are still not drawn — their route fell outside the
-    /// lane cap, or they are finished and explain no edge.
+    /// lane cap.
     /// </summary>
     /// <remarks>
     /// Counted separately from <see cref="UnroutedCount"/> because the two have different fixes and
@@ -53,6 +53,17 @@ public record RoadmapRouteResponse
 
     /// <summary>Items in the <see cref="RoadmapBand.Later"/> band.</summary>
     public required RoadmapItemResponse[] Later { get; init; }
+
+    /// <summary>
+    /// Items in a terminal state, whatever band they last held. They have moved past Now, Next and
+    /// Later, so they are drawn in a column of their own rather than in the band they left.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>required</c>: a server that predates this field leaves it empty and puts terminal
+    /// items in their band instead, marked <see cref="RoadmapItemResponse.IsTerminal"/>. The view
+    /// component moves those here itself, so both servers draw the same map.
+    /// </remarks>
+    public RoadmapItemResponse[] Closed { get; init; } = [];
 }
 
 /// <summary>One issue as it appears on the map.</summary>
@@ -123,12 +134,25 @@ public record RoadmapItemResponse
     /// </remarks>
     public IssueClaimResponse Claim { get; init; }
 
+    /// <summary>
+    /// The band the issue sits in, also for an item listed under <see cref="RoadmapRouteResponse.Closed"/>,
+    /// so a band filter treats an open and a finished issue alike. <c>null</c> from a server that
+    /// predates the field.
+    /// </summary>
+    public RoadmapBand? Band { get; init; }
+
+    /// <summary>
+    /// How much the issue matters, or <c>null</c> when untriaged — or when the server predates the
+    /// field, in which case an importance filter shows nothing.
+    /// </summary>
+    public IssueImportance? Importance { get; init; }
+
     /// <summary>Rough size, rendered on the item as <c>· S</c>, <c>· M</c> or <c>· L</c>.</summary>
     public required IssueEffort? Effort { get; init; }
 
     /// <summary>
-    /// Whether the issue is in a terminal state. A terminal item is on the map only because it
-    /// explains an edge, and is drawn as context rather than as work.
+    /// Whether the issue is in a terminal state. A terminal item is drawn in the Closed column, faded,
+    /// as context rather than as work.
     /// </summary>
     public required bool IsTerminal { get; init; }
 
