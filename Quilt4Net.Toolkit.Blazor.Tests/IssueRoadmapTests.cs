@@ -396,6 +396,165 @@ public class IssueRoadmapTests : BunitContext
         cut.FindAll("[data-claim]").Should().BeEmpty();
     }
 
+    [Fact]
+    public void Closed_items_are_drawn_in_a_column_left_of_now()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")])));
+
+        figure.Columns.Should().Equal("Closed", "Now", "Next", "Later");
+        var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
+        byNumber[2].X.Should().BeLessThan(byNumber[1].X);
+    }
+
+    [Fact]
+    public void A_terminal_item_an_older_server_left_in_its_band_moves_to_the_closed_column()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            Route("r", now: [Item(1)], later: [Item(2, terminal: true, state: "Closed")])));
+
+        figure.Columns.Should().Equal("Closed", "Now", "Next", "Later");
+        var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
+        byNumber[2].X.Should().BeLessThan(byNumber[1].X);
+    }
+
+    [Fact]
+    public void There_is_no_closed_column_when_nothing_is_closed()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(Route("r", now: [Item(1)])));
+
+        figure.Columns.Should().Equal("Now", "Next", "Later");
+    }
+
+    [Fact]
+    public void There_is_no_closed_column_when_the_filter_leaves_out_the_terminal_states()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")])),
+            new IssueFilter { States = ["Todo", "Doing"] });
+
+        figure.Columns.Should().Equal("Now", "Next", "Later");
+        figure.Items.Select(x => x.Item.Number).Should().Equal(1);
+        figure.FilteredItemCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void A_band_the_filter_excludes_is_dropped_rather_than_drawn_empty()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1)], later: [Item(2)])),
+            new IssueFilter { Bands = [RoadmapBand.Now, RoadmapBand.Next] });
+
+        figure.Columns.Should().Equal("Now", "Next");
+        figure.Width.Should().Be(RoadmapLayout.GutterWidth + 2 * RoadmapLayout.BandWidth);
+        figure.Items.Select(x => x.Item.Number).Should().Equal(1);
+    }
+
+    [Fact]
+    public void The_band_filter_applies_to_a_closed_item_by_the_band_it_left()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1)], closed:
+            [
+                Item(2, terminal: true, state: "Closed", band: RoadmapBand.Now),
+                Item(3, terminal: true, state: "Closed", band: RoadmapBand.Later)
+            ])),
+            new IssueFilter { Bands = [RoadmapBand.Now] });
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 2]);
+    }
+
+    [Fact]
+    public void Importance_and_effort_filters_hide_items_and_count_them()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now:
+            [
+                Item(1, importance: IssueImportance.Critical, effort: IssueEffort.S),
+                Item(2, importance: IssueImportance.Nice, effort: IssueEffort.S),
+                Item(3, importance: IssueImportance.Critical, effort: IssueEffort.L),
+                Item(4, importance: null)
+            ])),
+            new IssueFilter { Importances = [IssueImportance.Critical], Efforts = [IssueEffort.S] });
+
+        figure.Items.Select(x => x.Item.Number).Should().Equal(1);
+        figure.FilteredItemCount.Should().Be(3);
+    }
+
+    [Fact]
+    public void A_lane_the_filter_empties_is_not_drawn()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                Route("kept", now: [Item(1, importance: IssueImportance.Critical)]),
+                Route("emptied", now: [Item(2, importance: IssueImportance.Nice)])),
+            new IssueFilter { Importances = [IssueImportance.Critical] });
+
+        figure.Lanes.Select(x => x.Name).Should().Equal("kept");
+    }
+
+    [Fact]
+    public void An_edge_to_a_filtered_out_item_is_dropped_and_counted()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                new[] { Edge(2, 1, IssueLinkKind.Blocks, "done first") },
+                Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")])),
+            new IssueFilter { States = ["Todo"] });
+
+        figure.Edges.Should().BeEmpty();
+        figure.FilteredEdgeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void The_component_draws_the_closed_column_heading_only_when_it_holds_something()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")]));
+
+        var shown = Render<IssueRoadmap>();
+        var hidden = Render<IssueRoadmap>(p => p.Add(x => x.Filter, new IssueFilter { States = ["Todo"] }));
+
+        shown.FindAll("text[data-column]").Select(x => x.TextContent).Should().Equal("CLOSED", "NOW", "NEXT", "LATER");
+        hidden.FindAll("text[data-column]").Select(x => x.TextContent).Should().Equal("NOW", "NEXT", "LATER");
+    }
+
+    [Fact]
+    public void Changing_the_filter_redraws_without_reloading()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")]));
+        var cut = Render<IssueRoadmap>();
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(9)]));
+
+        cut.Render(p => p.Add(x => x.Filter, new IssueFilter { States = ["Todo"] }));
+
+        var texts = cut.FindAll("text").Select(x => x.TextContent).ToArray();
+        texts.Should().Contain("issue 1");
+        texts.Should().NotContain("issue 2");
+        texts.Should().NotContain("issue 9", "a filter change re-lays out the loaded projection rather than fetching a new one");
+    }
+
+    [Fact]
+    public void The_caption_says_what_the_filter_hides()
+    {
+        _issueService.Roadmap = Roadmap(
+            new[] { Edge(2, 1, IssueLinkKind.Blocks, "done first") },
+            Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")]));
+
+        var cut = Render<IssueRoadmap>(p => p.Add(x => x.Filter, new IssueFilter { States = ["Todo"] }));
+
+        cut.Markup.Should().Contain("Hidden by the filter: 1 item(s), 1 edge(s).");
+    }
+
+    [Fact]
+    public void A_filter_that_matches_nothing_says_so()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1)]));
+
+        var cut = Render<IssueRoadmap>(p => p.Add(x => x.Filter, new IssueFilter { States = ["Doing"] }));
+
+        cut.Markup.Should().Contain("Nothing matches the filter.");
+    }
+
     private static IssueClaimResponse Claim(string user, string machine, bool stale = false, DateTime? lastSeen = null) => new()
     {
         User = user,
@@ -433,18 +592,21 @@ public class IssueRoadmapTests : BunitContext
         GeneratedUtc = new DateTime(2026, 9, 3, 0, 0, 0, DateTimeKind.Utc)
     };
 
-    private static RoadmapRouteResponse Route(string name, RoadmapItemResponse[] now = null, RoadmapItemResponse[] next = null, RoadmapItemResponse[] later = null) => new()
+    private static RoadmapRouteResponse Route(string name, RoadmapItemResponse[] now = null, RoadmapItemResponse[] next = null, RoadmapItemResponse[] later = null, RoadmapItemResponse[] closed = null) => new()
     {
         Name = name,
         Now = now ?? [],
         Next = next ?? [],
-        Later = later ?? []
+        Later = later ?? [],
+        Closed = closed ?? []
     };
 
     private static RoadmapItemResponse Item(int number, bool terminal = false, bool quickWin = false, string assignedUserKey = null, string assignedUserName = null,
         string state = "Todo", RoadmapStateKind kind = RoadmapStateKind.NotStarted, string resolution = null, bool? resolutionIsSuccess = null,
-        IssueClaimResponse claim = null) => new()
+        IssueClaimResponse claim = null, RoadmapBand? band = null, IssueImportance? importance = IssueImportance.Important, IssueEffort? effort = IssueEffort.S) => new()
     {
+        Band = band,
+        Importance = importance,
         Claim = claim,
         Number = number,
         Title = $"issue {number}",
@@ -454,7 +616,7 @@ public class IssueRoadmapTests : BunitContext
         ResolutionIsSuccess = resolutionIsSuccess,
         AssignedUserKey = assignedUserKey ?? string.Empty,
         AssignedUserName = assignedUserName ?? string.Empty,
-        Effort = IssueEffort.S,
+        Effort = effort,
         IsTerminal = terminal,
         IsQuickWin = quickWin
     };

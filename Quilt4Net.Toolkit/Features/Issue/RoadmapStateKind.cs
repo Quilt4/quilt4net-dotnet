@@ -21,6 +21,6 @@ public enum RoadmapStateKind
     /// <summary>Neither initial nor terminal: somebody is on it.</summary>
     InProgress,
 
-    /// <summary>A terminal state. On the map only because it explains an edge.</summary>
+    /// <summary>A terminal state. Drawn in the Closed column, when the filter shows it.</summary>
     Done
 }

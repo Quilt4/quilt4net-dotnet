@@ -23,29 +23,45 @@ internal static class RoadmapLayout
     internal const double ItemGap = 12;
     internal const double LanePadding = 16;
     internal const double HeaderHeight = 36;
-    internal const double BandCount = 3;
 
-    /// <summary>Total figure width. Fixed, because the three bands are fixed.</summary>
-    internal const double Width = GutterWidth + BandWidth * BandCount;
+    /// <summary>The name of the virtual column terminal items are drawn in, left of Now.</summary>
+    internal const string ClosedColumn = "Closed";
 
-    public static RoadmapFigure Build(RoadmapResponse roadmap)
+    /// <summary>
+    /// Lays out the roadmap as the filter shows it. A band the filter excludes is dropped rather than
+    /// drawn empty, and the Closed column exists only while something is in it, so the map spends no
+    /// width on columns that cannot hold a card.
+    /// </summary>
+    public static RoadmapFigure Build(RoadmapResponse roadmap, IssueFilter filter = null)
     {
+        filter ??= IssueFilter.None;
+
+        var routes = roadmap.Routes.Select(route => Sort(route, filter)).ToArray();
+        var shownCount = routes.Sum(x => x.Closed.Length + x.Bands.Sum(b => b.Length));
+
+        var columns = new List<(string Name, Func<SortedRoute, RoadmapItemResponse[]> Items)>();
+        if (routes.Any(x => x.Closed.Length > 0)) columns.Add((ClosedColumn, x => x.Closed));
+        foreach (var band in Bands.Where(filter.IncludesBand))
+        {
+            columns.Add((band.ToString(), x => x.Bands[(int)band]));
+        }
+
         var lanes = new List<RoadmapLane>();
         var placed = new Dictionary<int, PlacedItem>();
         var y = HeaderHeight;
 
-        foreach (var route in roadmap.Routes)
+        foreach (var route in routes.Where(x => columns.Any(c => c.Items(x).Length > 0)))
         {
-            var bands = new[] { route.Now, route.Next, route.Later };
-            var deepest = bands.Max(b => b.Length);
+            var cells = columns.Select(c => c.Items(route)).ToArray();
+            var deepest = cells.Max(b => b.Length);
             var laneHeight = Math.Max(ItemHeight + LanePadding * 2, deepest * (ItemHeight + ItemGap) - ItemGap + LanePadding * 2);
 
-            for (var band = 0; band < bands.Length; band++)
+            for (var column = 0; column < cells.Length; column++)
             {
-                for (var index = 0; index < bands[band].Length; index++)
+                for (var index = 0; index < cells[column].Length; index++)
                 {
-                    var item = bands[band][index];
-                    var x = GutterWidth + band * BandWidth + (BandWidth - ItemWidth) / 2;
+                    var item = cells[column][index];
+                    var x = GutterWidth + column * BandWidth + (BandWidth - ItemWidth) / 2;
                     var itemY = y + LanePadding + index * (ItemHeight + ItemGap);
                     placed[item.Number] = new PlacedItem(item, x, itemY);
                 }
@@ -60,12 +76,56 @@ internal static class RoadmapLayout
             .Select(e => new PlacedEdge(e, placed[e.FromNumber], placed[e.ToNumber]))
             .ToArray();
 
-        return new RoadmapFigure(lanes.ToArray(), placed.Values.ToArray(), edges, Width, Math.Max(y, HeaderHeight + ItemHeight));
+        var totalCount = roadmap.Routes.Sum(x => x.Now.Length + x.Next.Length + x.Later.Length + (x.Closed ?? []).Length);
+
+        return new RoadmapFigure(
+            lanes.ToArray(),
+            columns.Select(x => x.Name).ToArray(),
+            placed.Values.ToArray(),
+            edges,
+            GutterWidth + BandWidth * Math.Max(columns.Count, 1),
+            Math.Max(y, HeaderHeight + ItemHeight),
+            totalCount - shownCount,
+            roadmap.Edges.Length - edges.Length);
     }
+
+    private static readonly RoadmapBand[] Bands = [RoadmapBand.Now, RoadmapBand.Next, RoadmapBand.Later];
+
+    /// <summary>
+    /// Sorts a route's items into the Closed column and the three bands, keeping only what the filter
+    /// shows. A terminal item a server still listed under its band is moved to Closed here, so an older
+    /// server draws the same map as a current one.
+    /// </summary>
+    private static SortedRoute Sort(RoadmapRouteResponse route, IssueFilter filter)
+    {
+        var byBand = new[] { route.Now, route.Next, route.Later }
+            .Select((items, index) => items.Select(x => x.Band == null ? x with { Band = Bands[index] } : x).ToArray())
+            .ToArray();
+
+        var closed = (route.Closed ?? [])
+            .Concat(byBand.SelectMany(x => x).Where(x => x.IsTerminal))
+            .Where(x => Shows(filter, x))
+            .ToArray();
+
+        var bands = byBand
+            .Select(items => items.Where(x => !x.IsTerminal && Shows(filter, x)).ToArray())
+            .ToArray();
+
+        return new SortedRoute(route.Name, closed, bands);
+    }
+
+    private static bool Shows(IssueFilter filter, RoadmapItemResponse item) =>
+        filter.Matches(item.Band, item.Importance, item.Effort, item.State);
+
+    private sealed record SortedRoute(string Name, RoadmapItemResponse[] Closed, RoadmapItemResponse[][] Bands);
 }
 
-/// <summary>The whole figure, laid out.</summary>
-internal sealed record RoadmapFigure(RoadmapLane[] Lanes, PlacedItem[] Items, PlacedEdge[] Edges, double Width, double Height);
+/// <summary>
+/// The whole figure, laid out. <paramref name="Columns"/> names the columns left to right;
+/// <paramref name="FilteredItemCount"/> and <paramref name="FilteredEdgeCount"/> say what the filter
+/// left off, so the caption can admit it.
+/// </summary>
+internal sealed record RoadmapFigure(RoadmapLane[] Lanes, string[] Columns, PlacedItem[] Items, PlacedEdge[] Edges, double Width, double Height, int FilteredItemCount, int FilteredEdgeCount);
 
 /// <summary>One lane band, from <paramref name="Top"/> down.</summary>
 internal sealed record RoadmapLane(string Name, double Top, double Height);
