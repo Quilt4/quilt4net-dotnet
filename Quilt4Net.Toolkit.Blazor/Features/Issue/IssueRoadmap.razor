@@ -13,14 +13,15 @@
     {
         <Loading Size="ProgressBarCircularSize.Small"/>
     }
-    else if (_figure.Lanes.Length == 0 && _figure.FilteredItemCount > 0)
+    else if (_figure.Items.Length == 0 && _figure.FilteredItemCount > 0)
     {
+        @ViewControls()
         <RadzenText TextStyle="TextStyle.Body1">Nothing matches the filter.</RadzenText>
         <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
             @_figure.FilteredItemCount item(s) are hidden by it.
         </RadzenText>
     }
-    else if (_figure.Lanes.Length == 0)
+    else if (_figure.Items.Length == 0)
     {
         <RadzenText TextStyle="TextStyle.Body1">Nothing to map yet.</RadzenText>
         <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
@@ -29,25 +30,55 @@
     }
     else
     {
+        @ViewControls()
+
         @if (ShowHowToRead)
         {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
-                <div>
-                    <RadzenText TextStyle="TextStyle.Overline">Lanes are routes</RadzenText>
-                    <RadzenText TextStyle="TextStyle.Body2">Each row is one theme of work, not one person and not one release.</RadzenText>
-                </div>
-                <div>
-                    <RadzenText TextStyle="TextStyle.Overline">Left to right suggests</RadzenText>
-                    <RadzenText TextStyle="TextStyle.Body2">Now, Next and Later are a suggestion you may disagree with.</RadzenText>
-                </div>
+                @if (_view == RoadmapView.Network)
+                {
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Overline">Links pull together</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">Cards that depend on each other sit close. Position means nothing else.</RadzenText>
+                    </div>
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Overline">Colour is the route</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">The card's border and its outgoing arrows wear its route's colour.</RadzenText>
+                    </div>
+                }
+                else
+                {
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Overline">Lanes are routes</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">Each row is one theme of work, not one person and not one release.</RadzenText>
+                    </div>
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Overline">Left to right suggests</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">Now, Next and Later are a suggestion you may disagree with.</RadzenText>
+                    </div>
+                }
                 <div>
                     <RadzenText TextStyle="TextStyle.Overline">Arrows constrain</RadzenText>
-                    <RadzenText TextStyle="TextStyle.Body2">An edge is a real dependency, and each one states its reason.</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Body2">An edge is a real dependency, and each one states its reason. Point at a card to pick out its own.</RadzenText>
                 </div>
                 <div>
                     <RadzenText TextStyle="TextStyle.Overline">Effort rides along</RadzenText>
                     <RadzenText TextStyle="TextStyle.Body2">S, M and L sit on the item. A ring marks a quick win.</RadzenText>
                 </div>
+            </div>
+
+            @* Identity is never colour alone: the lanes name their route in text, and the network view
+               has nothing else, so the legend is what makes its colours readable at all. *@
+            <div data-route-legend style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
+                @foreach (var route in _figure.Routes)
+                {
+                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                        <svg width="12" height="12" role="presentation">
+                            <rect x="1" y="1" width="10" height="10" rx="2" fill="@route.Colour"/>
+                        </svg>
+                        <RadzenText TextStyle="TextStyle.Body2" Style="margin: 0;">@route.Name</RadzenText>
+                    </span>
+                }
             </div>
 
             <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
@@ -94,22 +125,40 @@
             </div>
         }
 
+        @* The hover highlight is CSS, not a Blazor event: pointing at a card must not cost a server
+           round trip per mouse move, and it has to work on a read-only map too. Every card and edge
+           carries q-n{number} for itself and for each card it touches, so one rule per card lights
+           the card, its neighbours and its edges, and a general rule dims everything else. *@
+        <style>@((MarkupString)_hoverCss)</style>
+
         @* The figure is wrapped so the click targets can sit over it as HTML. They cannot be SVG:
            Blazor does not attach event handlers to SVG-namespaced elements, so an @@onclick on a
            <rect> renders the shape and silently wires nothing - verified in the browser, where 83
            elements on the page carried a handler attribute and the rect carried none. Overlaying
            real buttons also makes the cards keyboard-reachable, which a drawing never was. *@
-        <div style="overflow-x: auto; max-width: 100%;">
-          <div style="position: relative; width: @N(_figure.Width)px; height: @N(_figure.Height)px;">
+        @* Zoom scales the figure alone, not the page: the inner box keeps the layout's own
+           coordinates, which is what the hit targets are placed in, and the sizer around it takes up
+           the scaled size so the scrollbars match what is drawn. *@
+        <div style="overflow: auto; max-width: 100%;">
+         <div data-zoom="@N(_zoom)" style="width: @N(_figure.Width * _zoom)px; height: @N(_figure.Height * _zoom)px;">
+          <div class="@_id" data-view="@_view.ToString().ToLowerInvariant()" style="position: relative; width: @N(_figure.Width)px; height: @N(_figure.Height)px; transform: scale(@N(_zoom)); transform-origin: 0 0;">
             <svg width="@N(_figure.Width)" height="@N(_figure.Height)"
                  viewBox="0 0 @N(_figure.Width) @N(_figure.Height)"
                  role="img" aria-label="Issue roadmap"
                  style="min-width: @N(_figure.Width)px; font-family: inherit;">
                 <defs>
-                    <marker id="@($"{_id}-arrow")" viewBox="0 0 10 10" refX="9" refY="5"
-                            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--rz-text-color)"/>
-                    </marker>
+                    <clipPath id="@(_id)-avatar" clipPathUnits="objectBoundingBox">
+                        <circle cx="0.5" cy="0.5" r="0.5"/>
+                    </clipPath>
+                    @* One arrowhead per colour: a marker cannot take its colour from the line it
+                       ends, short of context-stroke, which older browsers draw black. *@
+                    @foreach (var colour in MarkerColours())
+                    {
+                        <marker id="@MarkerId(colour)" viewBox="0 0 10 10" refX="9" refY="5"
+                                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="@colour"/>
+                        </marker>
+                    }
                 </defs>
 
                 @for (var i = 0; i < _figure.Lanes.Length; i++)
@@ -120,6 +169,7 @@
                     <g>
                         <rect x="0" y="@N(lane.Top)" width="@N(_figure.Width)" height="@N(lane.Height)"
                               fill="currentColor" opacity="@(i % 2 == 0 ? "0.03" : "0.06")"/>
+                        <rect x="0" y="@N(lane.Top)" width="4" height="@N(lane.Height)" fill="@lane.Colour"/>
                         <text x="12" y="@N(lane.Top + 22)" fill="var(--rz-text-color)"
                               font-size="13" font-weight="600">@Truncate(lane.Name, 26)</text>
                     </g>
@@ -136,12 +186,21 @@
                     </g>
                 }
 
+                @if (_figure.UnlinkedTop.HasValue)
+                {
+                    <g>
+                        <text data-unlinked x="@N(RoadmapNetworkLayout.Padding)" y="@N(_figure.UnlinkedTop.Value + 22)"
+                              fill="var(--rz-text-secondary-color)" font-size="12" letter-spacing="0.08em">NO LINKS</text>
+                    </g>
+                }
+
                 @foreach (var edge in _figure.Edges)
                 {
-                    <path d="@edge.Path()" fill="none"
-                          stroke="var(--rz-text-color)" stroke-opacity="0.65" stroke-width="2"
+                    <path class="q-edge q-n@(edge.From.Item.Number) q-n@(edge.To.Item.Number)"
+                          d="@edge.Path()" fill="none"
+                          stroke="@edge.From.Colour" stroke-opacity="0.75" stroke-width="2"
                           stroke-dasharray="@DashFor(edge.Edge.Kind)"
-                          marker-end="@(edge.Edge.Kind == IssueLinkKind.Overlaps ? null : $"url(#{_id}-arrow)")">
+                          marker-end="@(edge.Edge.Kind == IssueLinkKind.Overlaps ? null : $"url(#{MarkerId(edge.From.Colour)})")">
                         <title>@edge.From.Item.Number → @edge.To.Item.Number (@edge.Edge.Kind.ToString().ToLowerInvariant()): @edge.Edge.Reason</title>
                     </path>
                 }
@@ -149,76 +208,119 @@
                 @foreach (var placed in _figure.Items)
                 {
                     var item = placed.Item;
-                    <g opacity="@(item.IsTerminal ? "0.45" : "1")">
-                        <title>@TitleFor(item)</title>
-                        <rect x="@N(placed.X)" y="@N(placed.Y)"
-                              width="@N(RoadmapLayout.ItemWidth)" height="@N(RoadmapLayout.ItemHeight)"
-                              rx="6" fill="var(--rz-base)" stroke="currentColor"
-                              stroke-opacity="0.35" stroke-width="1"/>
+                    <g class="@CardClass(item.Number)" data-hover="@item.Number">
+                      <g opacity="@(item.IsTerminal ? "0.45" : "1")">
+                        <title>@TitleFor(placed)</title>
+                        <rect data-card x="@N(placed.X)" y="@N(placed.Y)"
+                              width="@N(placed.Width)" height="@N(placed.Height)"
+                              rx="6" fill="var(--rz-base)" stroke="@placed.Colour"
+                              stroke-width="1.5"/>
 
                         @* Status as a bar down the leading edge rather than a word: it reads at a
                            glance across a whole lane, which a right-aligned label never did. The
                            state name stays on the card beside it, because a colour nobody has a
                            legend for is decoration. *@
-                        <rect x="@N(placed.X)" y="@N(placed.Y + 8)" width="3" height="@N(RoadmapLayout.ItemHeight - 16)"
+                        <rect x="@N(placed.X)" y="@N(placed.Y + 8)" width="3" height="@N(placed.Height - 16)"
                               rx="1.5" fill="@StatusColour(item)"/>
 
                         @if (item.IsQuickWin)
                         {
-                            <circle cx="@N(placed.X + RoadmapLayout.ItemWidth - 14)" cy="@N(placed.Y + 14)"
+                            <circle cx="@N(placed.Right - 14)" cy="@N(placed.Y + 14)"
                                     r="5" fill="none" stroke="var(--rz-text-color)" stroke-width="2"/>
                         }
                         <text x="@N(placed.X + 12)" y="@N(placed.Y + 20)" font-size="12" font-weight="700"
                               fill="var(--rz-text-secondary-color)">#@item.Number</text>
                         <text x="@N(placed.X + 12)" y="@N(placed.Y + 38)" font-size="13"
-                              fill="var(--rz-text-color)">@Truncate(item.Title, 30)</text>
+                              fill="var(--rz-text-color)">@Truncate(item.Title, TitleLength(placed))</text>
 
-                        <g>
-                            <circle cx="@N(placed.X + 16)" cy="@N(placed.Y + 57)" r="4" fill="@StatusColour(item)"/>
-                            <text data-state x="@N(placed.X + 26)" y="@N(placed.Y + 61)" font-size="11"
-                                  fill="var(--rz-text-secondary-color)">@Truncate(StateLabel(item), 20)</text>
-                        </g>
-
-                        @* The claim takes the assignee's slot when there is one: it says which session
-                           has the issue open right now, which is the more urgent thing to see, and the
-                           card has one corner for a name. The assignee stays in the tooltip. A stale
-                           claim is faded and italic, so "somebody is on it" and "somebody was" do not
-                           look alike. *@
-                        @if (item.Claim != null)
+                        @* The network card has no third row: state is in the tooltip, and the status
+                           bar still carries it at a glance. *@
+                        @if (_view == RoadmapView.Lanes)
                         {
                             <g>
-                                <text data-claim data-stale="@(item.Claim.IsStale ? "true" : "false")"
-                                      x="@N(placed.X + RoadmapLayout.ItemWidth - 12)" y="@N(placed.Y + 61)"
-                                      font-size="11" text-anchor="end"
-                                      font-style="@(item.Claim.IsStale ? "italic" : "normal")"
-                                      opacity="@(item.Claim.IsStale ? "0.55" : "1")"
-                                      fill="@(item.Claim.IsStale ? "var(--rz-text-tertiary-color)" : "var(--rz-primary)")">@Truncate(ClaimantFor(item.Claim), 18)</text>
+                                <circle cx="@N(placed.X + 16)" cy="@N(placed.Y + 57)" r="4" fill="@StatusColour(item)"/>
+                                <text data-state x="@N(placed.X + 26)" y="@N(placed.Y + 61)" font-size="11"
+                                      fill="var(--rz-text-secondary-color)">@Truncate(StateLabel(item), 20)</text>
                             </g>
                         }
-                        else if (!string.IsNullOrEmpty(AssigneeFor(item)))
+
+                        @* Who, as a picture: the assignee's avatar, or a machine when only a session
+                           has claimed it. The words - name, claimant, machine, last seen - are the
+                           mark's own tooltip, since a name in a corner was cut to 18 characters and a
+                           machine name is what got cut. *@
+                        @if (PersonMark(placed) is { } mark)
                         {
-                            <g>
-                                @* data-assignee is a selector hook, deliberately valueless: it lets a
-                                   test read this node instead of searching the whole document, which
-                                   is not a nicety — Radzen stamps a random id on every RadzenText it
-                                   renders, so any substring assertion over the markup can match one by
-                                   chance. Same idiom as data-issue on the hit target. *@
-                                <text data-assignee x="@N(placed.X + RoadmapLayout.ItemWidth - 12)" y="@N(placed.Y + 61)"
-                                      font-size="11" text-anchor="end"
-                                      fill="var(--rz-text-tertiary-color)">@Truncate(AssigneeFor(item), 18)</text>
-                            </g>
+                            @if (!string.IsNullOrEmpty(AssigneeFor(item)))
+                            {
+                                <g data-assignee data-tip="@PersonTip(item)">
+                                    <title>@PersonTip(item)</title>
+                                    <circle cx="@N(mark.Cx)" cy="@N(mark.Cy)" r="@N(AvatarRadius)"
+                                            fill="@placed.Colour" opacity="0.85"/>
+                                    <text data-initials x="@N(mark.Cx)" y="@N(mark.Cy + 3.5)" font-size="9.5" font-weight="700"
+                                          text-anchor="middle" fill="#ffffff">@Initials(AssigneeFor(item))</text>
+                                    @* Over the initials rather than instead of them: an image that fails
+                                       to load draws nothing in SVG, and the initials then show through. *@
+                                    @if (!string.IsNullOrEmpty(item.AssignedUserIconUrl))
+                                    {
+                                        <image data-avatar href="@item.AssignedUserIconUrl"
+                                               x="@N(mark.Cx - AvatarRadius)" y="@N(mark.Cy - AvatarRadius)"
+                                               width="@N(AvatarRadius * 2)" height="@N(AvatarRadius * 2)"
+                                               preserveAspectRatio="xMidYMid slice" clip-path="url(#@(_id)-avatar)"/>
+                                    }
+                                    @* A live claim is still worth seeing without pointing at it: a dot
+                                       on the avatar, hollow once the claim has gone stale. *@
+                                    @if (item.Claim != null)
+                                    {
+                                        <circle data-claim data-stale="@(item.Claim.IsStale ? "true" : "false")"
+                                                cx="@N(mark.Cx + AvatarRadius * 0.75)" cy="@N(mark.Cy + AvatarRadius * 0.75)" r="3.5"
+                                                fill="@(item.Claim.IsStale ? "var(--rz-base)" : "var(--rz-success)")"
+                                                stroke="@(item.Claim.IsStale ? "var(--rz-text-tertiary-color)" : "var(--rz-base)")"
+                                                stroke-width="1.5"/>
+                                    }
+                                </g>
+                            }
+                            else
+                            {
+                                @* A stale claim is faded, so "somebody is on it" and "somebody was" do
+                                   not look alike. *@
+                                <g data-claim data-stale="@(item.Claim.IsStale ? "true" : "false")" data-tip="@PersonTip(item)"
+                                   opacity="@(item.Claim.IsStale ? "0.45" : "1")">
+                                    <title>@PersonTip(item)</title>
+                                    <circle cx="@N(mark.Cx)" cy="@N(mark.Cy)" r="@N(AvatarRadius)" fill="var(--rz-base-200)"/>
+                                    <rect x="@N(mark.Cx - 5)" y="@N(mark.Cy - 5)" width="10" height="7" rx="1"
+                                          fill="none" stroke="@(item.Claim.IsStale ? "var(--rz-text-tertiary-color)" : "var(--rz-primary)")" stroke-width="1.4"/>
+                                    <path d="M @N(mark.Cx - 3) @N(mark.Cy + 5) H @N(mark.Cx + 3) M @N(mark.Cx) @N(mark.Cy + 2) V @N(mark.Cy + 5)"
+                                          stroke="@(item.Claim.IsStale ? "var(--rz-text-tertiary-color)" : "var(--rz-primary)")" stroke-width="1.4"/>
+                                </g>
+                            }
                         }
 
                         @if (item.Effort.HasValue)
                         {
                             <g>
-                                <text x="@N(placed.X + RoadmapLayout.ItemWidth - 12)" y="@N(placed.Y + 20)"
+                                <text x="@N(placed.Right - (item.IsQuickWin ? 26 : 12))" y="@N(placed.Y + 20)"
                                       font-size="12" text-anchor="end"
                                       fill="var(--rz-text-secondary-color)">· @item.Effort.Value</text>
                             </g>
                         }
+                      </g>
                     </g>
                 }
+
+                @* The pointed-at card's edges again, above the cards. The edges proper are drawn
+                   under the cards so a card is never crossed out, which also means a lit edge
+                   would run beneath every card in its way; this layer is invisible until its card
+                   is pointed at, and never takes the pointer. *@
+                <g data-highlight-layer>
+                    @foreach (var edge in _figure.Edges)
+                    {
+                        <path class="q-hi q-n@(edge.From.Item.Number) q-n@(edge.To.Item.Number)"
+                              d="@edge.Path()" fill="none"
+                              stroke="@edge.From.Colour" stroke-width="3"
+                              stroke-dasharray="@DashFor(edge.Edge.Kind)"
+                              marker-end="@(edge.Edge.Kind == IssueLinkKind.Overlaps ? null : $"url(#{MarkerId(edge.From.Colour)})")"/>
+                    }
+                </g>
             </svg>
 
             @if (Selectable)
@@ -228,17 +330,33 @@
                     var number = placed.Item.Number;
                     <button type="button"
                             data-issue="@number"
-                            title="@TitleFor(placed.Item)"
+                            data-hover="@number"
+                            class="@(_neighbours.TryGetValue(number, out var n) && n.Count > 0 ? "q-linked" : null)"
+                            title="@TitleFor(placed)"
                             aria-label="@($"Issue #{number}: {placed.Item.Title}")"
                             @onclick="@(() => OnItemClickAsync(number))"
-                            style="position: absolute; left: @N(placed.X)px; top: @N(placed.Y)px; width: @N(RoadmapLayout.ItemWidth)px; height: @N(RoadmapLayout.ItemHeight)px; padding: 0; margin: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer;"></button>
+                            style="position: absolute; left: @N(placed.X)px; top: @N(placed.Y)px; width: @N(placed.Width)px; height: @N(placed.Height)px; padding: 0; margin: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer;"></button>
+
+                    @* The button covers the card, so its title would hide the avatar's own. A
+                       small target over the mark carries that tooltip, and clicks through to the
+                       same issue. *@
+                    @if (PersonMark(placed) is { } mark)
+                    {
+                        <span data-person="@number"
+                              data-hover="@number"
+                              class="@(_neighbours.TryGetValue(number, out var m) && m.Count > 0 ? "q-linked" : null)"
+                              title="@PersonTip(placed.Item)"
+                              @onclick="@(() => OnItemClickAsync(number))"
+                              style="position: absolute; left: @N(mark.Cx - AvatarRadius)px; top: @N(mark.Cy - AvatarRadius)px; width: @N(AvatarRadius * 2)px; height: @N(AvatarRadius * 2)px; border-radius: 50%; cursor: pointer;"></span>
+                    }
                 }
             }
           </div>
+         </div>
         </div>
 
         <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;">
-            @_figure.Items.Length item(s) across @_figure.Lanes.Length route(s), @_figure.Edges.Length edge(s).
+            @_figure.Items.Length item(s) across @_figure.Routes.Length route(s), @_figure.Edges.Length edge(s).
             Snapshot @_generatedUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) UTC. @UnroutedNote() @FilteredNote()
         </RadzenText>
     }
@@ -306,13 +424,163 @@
     [Parameter]
     public IssueFilter Filter { get; set; }
 
+    /// <summary>
+    /// Which arrangement to draw. Bind it (<c>@@bind-View</c>) to remember the reader's choice; left
+    /// unbound, the component keeps it for as long as it lives.
+    /// </summary>
+    [Parameter]
+    public RoadmapView View { get; set; }
+
+    [Parameter]
+    public EventCallback<RoadmapView> ViewChanged { get; set; }
+
+    /// <summary>Drops cards with no link left on the map. Bindable, like <see cref="View"/>.</summary>
+    [Parameter]
+    public bool HideUnlinked { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> HideUnlinkedChanged { get; set; }
+
+    /// <summary>Whether to draw the view switch and the hide-unlinked toggle above the figure.</summary>
+    [Parameter]
+    public bool ShowViewControls { get; set; } = true;
+
     private bool Selectable => OnItemSelected.HasDelegate;
+
+    private RoadmapView _view;
+    private bool _hideUnlinked;
+
+    /// <summary>
+    /// Fixed steps rather than a free factor, so the label always reads as a round number and two
+    /// clicks out and two in land back exactly where they started.
+    /// </summary>
+    private static readonly double[] ZoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2];
+
+    private double _zoom = 1;
+
+    private void Zoom(int direction)
+    {
+        var at = Array.IndexOf(ZoomSteps, _zoom);
+        if (at < 0) at = Array.IndexOf(ZoomSteps, 1d);
+        _zoom = ZoomSteps[Math.Clamp(at + direction, 0, ZoomSteps.Length - 1)];
+    }
+    private string _hoverCss = string.Empty;
+    private Dictionary<int, HashSet<int>> _neighbours = new();
+
+    // What the current figure was laid out from. The network layout is a few hundred passes over
+    // every pair of cards, and a parent re-render calls OnParametersSet with nothing changed.
+    private (RoadmapResponse Roadmap, IssueFilter Filter, RoadmapView View, bool HideUnlinked) _laidOut;
+
+    // The last values the host passed. Adopted only when they change, so an unbound component keeps
+    // the reader's choice through a parent re-render instead of snapping back to the default.
+    private RoadmapView? _viewParameter;
+    private bool? _hideUnlinkedParameter;
 
     protected override void OnParametersSet()
     {
-        if (_roadmap != null) _figure = RoadmapLayout.Build(_roadmap, Filter);
+        if (_viewParameter != View) _view = View;
+        if (_hideUnlinkedParameter != HideUnlinked) _hideUnlinked = HideUnlinked;
+        _viewParameter = View;
+        _hideUnlinkedParameter = HideUnlinked;
+        Relayout();
         base.OnParametersSet();
     }
+
+    private void Relayout()
+    {
+        if (_roadmap == null) return;
+
+        var key = (_roadmap, Filter, _view, _hideUnlinked);
+        if (_figure != null && _laidOut == key) return;
+
+        _figure = RoadmapLayout.Build(_roadmap, Filter, _view, _hideUnlinked);
+        _laidOut = key;
+
+        _neighbours = _figure.Items.ToDictionary(x => x.Item.Number, _ => new HashSet<int>());
+        foreach (var edge in _figure.Edges)
+        {
+            _neighbours[edge.From.Item.Number].Add(edge.To.Item.Number);
+            _neighbours[edge.To.Item.Number].Add(edge.From.Item.Number);
+        }
+
+        _hoverCss = HoverCss();
+    }
+
+    /// <summary>
+    /// The general rule dims every card and edge while any card is pointed at; the per-card rule,
+    /// later and of equal specificity, restores the ones that carry the pointed-at card's class. Only
+    /// cards with a link get a rule, so pointing at a loner does not blank the whole map.
+    /// </summary>
+    private string HoverCss()
+    {
+        var scope = $".{_id}";
+        var css = new System.Text.StringBuilder();
+        css.Append($"{scope} .q-hi {{ opacity: 0; pointer-events: none; }}\n");
+        css.Append($"{scope}:has([data-hover].q-linked:hover) .q-edge {{ opacity: 0.1; }}\n");
+        css.Append($"{scope}:has([data-hover].q-linked:hover) .q-card {{ opacity: 0.3; }}\n");
+        foreach (var number in _neighbours.Where(x => x.Value.Count > 0).Select(x => x.Key))
+        {
+            css.Append($"{scope}:has([data-hover=\"{number}\"]:hover) :is(.q-card.q-n{number}, .q-hi.q-n{number}) {{ opacity: 1; }}\n");
+        }
+
+        return css.ToString();
+    }
+
+    private string CardClass(int number)
+    {
+        var classes = new List<string> { "q-card", $"q-n{number}" };
+        if (_neighbours.TryGetValue(number, out var neighbours) && neighbours.Count > 0)
+        {
+            classes.Add("q-linked");
+            classes.AddRange(neighbours.Order().Select(x => $"q-n{x}"));
+        }
+
+        return string.Join(" ", classes);
+    }
+
+    private IEnumerable<string> MarkerColours() =>
+        _figure.Edges.Select(x => x.From.Colour).Distinct(StringComparer.Ordinal);
+
+    private string MarkerId(string colour) => $"{_id}-arrow-{colour.TrimStart('#')}";
+
+    private async Task SetViewAsync(RoadmapView view)
+    {
+        _view = view;
+        Relayout();
+        await ViewChanged.InvokeAsync(view);
+    }
+
+    private async Task SetHideUnlinkedAsync(bool value)
+    {
+        _hideUnlinked = value;
+        Relayout();
+        await HideUnlinkedChanged.InvokeAsync(value);
+    }
+
+    private RenderFragment ViewControls() => __builder =>
+    {
+        if (!ShowViewControls) return;
+        <div data-view-controls style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
+            <RadzenSelectBar TValue="RoadmapView" Value="@_view" ValueChanged="@SetViewAsync" Size="ButtonSize.Small">
+                <Items>
+                    <RadzenSelectBarItem Text="Lanes" Value="RoadmapView.Lanes"/>
+                    <RadzenSelectBarItem Text="Network" Value="RoadmapView.Network"/>
+                </Items>
+            </RadzenSelectBar>
+            <span data-zoom-controls style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                <RadzenButton Icon="zoom_out" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text"
+                              Disabled="@(_zoom <= ZoomSteps[0])" Click="@(() => Zoom(-1))" title="Zoom out"/>
+                <RadzenButton Text="@($"{Math.Round(_zoom * 100)}%")" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text"
+                              Click="@(() => _zoom = 1)" title="Back to 100%" Style="min-width: 4rem;"/>
+                <RadzenButton Icon="zoom_in" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text"
+                              Disabled="@(_zoom >= ZoomSteps[^1])" Click="@(() => Zoom(1))" title="Zoom in"/>
+            </span>
+            <span style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                <RadzenSwitch Value="@_hideUnlinked" ValueChanged="@((bool v) => SetHideUnlinkedAsync(v))" Name="@($"{_id}-hide-unlinked")"/>
+                <RadzenLabel Text="Hide cards with no links" Component="@($"{_id}-hide-unlinked")"/>
+            </span>
+        </div>
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -334,7 +602,7 @@
             _unroutedCount = roadmap.UnroutedCount;
             _hiddenCount = roadmap.HiddenCount;
             _roadmap = roadmap;
-            _figure = RoadmapLayout.Build(roadmap, Filter);
+            Relayout();
         }
         catch (IssueServiceException e)
         {
@@ -445,9 +713,11 @@
     /// Deliberately an instance method: it has to resolve the assignee the same way the card does,
     /// or a host roster would leave the tooltip naming one person and the card another.
     /// </summary>
-    private string TitleFor(RoadmapItemResponse item)
+    private string TitleFor(PlacedItem placed)
     {
+        var item = placed.Item;
         var parts = new List<string> { $"#{item.Number} {item.Title}", item.State };
+        if (!string.IsNullOrEmpty(placed.Route)) parts.Add(placed.Route);
         if (item.Effort.HasValue) parts.Add(item.Effort.Value.ToString());
 
         var assignee = AssigneeFor(item);
@@ -461,6 +731,56 @@
 
         if (item.IsQuickWin) parts.Add("quick win");
         return string.Join(" · ", parts);
+    }
+
+    private const double AvatarRadius = 9;
+
+    /// <summary>
+    /// Where the card's person mark goes, or <c>null</c> when there is nobody to draw: no assignee and
+    /// no claim. Bottom right on a lane card; on the two-row network card, beside the title.
+    /// </summary>
+    private (double Cx, double Cy)? PersonMark(PlacedItem placed)
+    {
+        if (string.IsNullOrEmpty(AssigneeFor(placed.Item)) && placed.Item.Claim == null) return null;
+        return _view == RoadmapView.Network
+            ? (placed.Right - 18, placed.Y + 34)
+            : (placed.Right - 20, placed.Y + 57);
+    }
+
+    /// <summary>The network title shares its row with the person mark, so it gives way to it.</summary>
+    private int TitleLength(PlacedItem placed) =>
+        _view != RoadmapView.Network ? 30 : PersonMark(placed) == null ? 24 : 22;
+
+    /// <summary>
+    /// The person mark's tooltip: who it is assigned to, then who has it open and from which machine.
+    /// </summary>
+    private string PersonTip(RoadmapItemResponse item)
+    {
+        var lines = new List<string>();
+        var assignee = AssigneeFor(item);
+        if (!string.IsNullOrEmpty(assignee)) lines.Add($"Assigned to {assignee}");
+
+        if (item.Claim != null)
+        {
+            var who = string.IsNullOrWhiteSpace(item.Claim.User) ? "Claimed" : $"Claimed by {item.Claim.User}";
+            var where = string.IsNullOrWhiteSpace(item.Claim.Machine) ? string.Empty : $" on {item.Claim.Machine}";
+            var stale = item.Claim.IsStale ? ", stale" : string.Empty;
+            lines.Add($"{who}{where}, last seen {Ago(item.Claim.LastSeenUtc)}{stale}");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>One letter for one word, first and last for more, as the team avatars do.</summary>
+    private static string Initials(string name)
+    {
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return words.Length switch
+        {
+            0 => "?",
+            1 => char.ToUpperInvariant(words[0][0]).ToString(),
+            _ => $"{char.ToUpperInvariant(words[0][0])}{char.ToUpperInvariant(words[^1][0])}"
+        };
     }
 
     /// <summary>

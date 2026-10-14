@@ -3,6 +3,17 @@
 namespace Quilt4Net.Toolkit.Blazor.Features.Issue;
 
 /// <summary>
+/// How the roadmap is arranged. <see cref="Lanes"/> puts each route on its own row and the bands left
+/// to right; <see cref="Network"/> lets the links decide where a card sits, so the dependencies are
+/// the thing in the middle and the route is only a colour.
+/// </summary>
+public enum RoadmapView
+{
+    Lanes,
+    Network
+}
+
+/// <summary>
 /// Turns a <see cref="RoadmapResponse"/> into placed geometry for the roadmap figure.
 /// </summary>
 /// <remarks>
@@ -13,7 +24,8 @@ namespace Quilt4Net.Toolkit.Blazor.Features.Issue;
 internal static class RoadmapLayout
 {
     internal const double GutterWidth = 176;
-    internal const double BandWidth = 288;
+    // 64px between the cards of neighbouring columns: room for an arrow to turn, and for the columns to read as columns.
+    internal const double BandWidth = 320;
     internal const double ItemWidth = 256;
 
     // Three rows: number + effort, title, then status and assignee. The third row was added rather
@@ -28,17 +40,74 @@ internal static class RoadmapLayout
     internal const string ClosedColumn = "Closed";
 
     /// <summary>
+    /// One colour per route, in this fixed order. The first eight are the data-viz reference
+    /// categorical palette; the second eight were picked to extend it, and the sixteen pass the
+    /// palette validator's checks for neighbouring slots (lightness band, chroma, colour-blind and
+    /// normal-vision separation) on a light surface. Not every pair of the sixteen is far apart -
+    /// no sixteen colours are - which is why a lane also carries its name and a card its route in
+    /// the tooltip. A route past the sixteenth starts the list again.
+    /// </summary>
+    internal static readonly string[] RoutePalette =
+    [
+        "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948",
+        "#00b5d1", "#9c5b2e", "#b0b800", "#a3006b", "#7a9cf0", "#5a6b00", "#3fbf95", "#c58af0"
+    ];
+
+    internal const string UnassignedRouteColour = "#898781";
+
+    /// <summary>
     /// Lays out the roadmap as the filter shows it. A band the filter excludes is dropped rather than
     /// drawn empty, and the Closed column exists only while something is in it, so the map spends no
     /// width on columns that cannot hold a card.
     /// </summary>
-    public static RoadmapFigure Build(RoadmapResponse roadmap, IssueFilter filter = null)
+    /// <param name="hideUnlinked">
+    /// Drops a card with no edge left on the map once the filter has run. Judged after the filter,
+    /// since a link to a hidden card is not one the reader can see either.
+    /// </param>
+    public static RoadmapFigure Build(RoadmapResponse roadmap, IssueFilter filter = null, RoadmapView view = RoadmapView.Lanes, bool hideUnlinked = false)
     {
         filter ??= IssueFilter.None;
 
-        var routes = roadmap.Routes.Select(route => Sort(route, filter)).ToArray();
-        var shownCount = routes.Sum(x => x.Closed.Length + x.Bands.Sum(b => b.Length));
+        // Colour follows the route, never its position on the drawn map: slots come from the whole
+        // projection, so filtering a lane away does not repaint the ones left.
+        var routeColours = roadmap.Routes
+            .Select((route, index) => (route.Name, Colour: RoutePalette[index % RoutePalette.Length]))
+            .GroupBy(x => x.Name, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.First().Colour, StringComparer.Ordinal);
 
+        var routes = roadmap.Routes.Select(route => Sort(route, filter)).ToArray();
+
+        if (hideUnlinked)
+        {
+            var shown = routes.SelectMany(x => x.Closed.Concat(x.Bands.SelectMany(b => b))).Select(x => x.Number).ToHashSet();
+            var linked = roadmap.Edges
+                .Where(e => shown.Contains(e.FromNumber) && shown.Contains(e.ToNumber))
+                .SelectMany(e => new[] { e.FromNumber, e.ToNumber })
+                .ToHashSet();
+            routes = routes.Select(x => x.Keep(linked)).ToArray();
+        }
+
+        var shownCount = routes.Sum(x => x.Closed.Length + x.Bands.Sum(b => b.Length));
+        var totalCount = roadmap.Routes.Sum(x => x.Now.Length + x.Next.Length + x.Later.Length + (x.Closed ?? []).Length);
+        var legend = routes
+            .Where(x => x.Closed.Length + x.Bands.Sum(b => b.Length) > 0)
+            .Select(x => new RoadmapRouteColour(x.Name, routeColours[x.Name]))
+            .ToArray();
+
+        var figure = view == RoadmapView.Network
+            ? RoadmapNetworkLayout.Place(routes.SelectMany(r => r.Closed.Concat(r.Bands.SelectMany(b => b)).Select(i => (i, r.Name, routeColours[r.Name]))).ToArray(), roadmap.Edges)
+            : PlaceLanes(routes, roadmap.Edges, filter, routeColours);
+
+        return figure with
+        {
+            Routes = legend,
+            FilteredItemCount = totalCount - shownCount,
+            FilteredEdgeCount = roadmap.Edges.Length - figure.Edges.Length
+        };
+    }
+
+    private static RoadmapFigure PlaceLanes(SortedRoute[] routes, RoadmapEdgeResponse[] edges, IssueFilter filter, IReadOnlyDictionary<string, string> routeColours)
+    {
         var columns = new List<(string Name, Func<SortedRoute, RoadmapItemResponse[]> Items)>();
         if (routes.Any(x => x.Closed.Length > 0)) columns.Add((ClosedColumn, x => x.Closed));
         foreach (var band in Bands.Where(filter.IncludesBand))
@@ -63,31 +132,31 @@ internal static class RoadmapLayout
                     var item = cells[column][index];
                     var x = GutterWidth + column * BandWidth + (BandWidth - ItemWidth) / 2;
                     var itemY = y + LanePadding + index * (ItemHeight + ItemGap);
-                    placed[item.Number] = new PlacedItem(item, x, itemY);
+                    placed[item.Number] = new PlacedItem(item, x, itemY) { Route = route.Name, Colour = routeColours[route.Name] };
                 }
             }
 
-            lanes.Add(new RoadmapLane(route.Name, y, laneHeight));
+            lanes.Add(new RoadmapLane(route.Name, y, laneHeight) { Colour = routeColours[route.Name] });
             y += laneHeight;
         }
-
-        var edges = roadmap.Edges
-            .Where(e => placed.ContainsKey(e.FromNumber) && placed.ContainsKey(e.ToNumber))
-            .Select(e => new PlacedEdge(e, placed[e.FromNumber], placed[e.ToNumber]))
-            .ToArray();
-
-        var totalCount = roadmap.Routes.Sum(x => x.Now.Length + x.Next.Length + x.Later.Length + (x.Closed ?? []).Length);
 
         return new RoadmapFigure(
             lanes.ToArray(),
             columns.Select(x => x.Name).ToArray(),
             placed.Values.ToArray(),
-            edges,
+            JoinEdges(placed, edges, straight: false),
             GutterWidth + BandWidth * Math.Max(columns.Count, 1),
             Math.Max(y, HeaderHeight + ItemHeight),
-            totalCount - shownCount,
-            roadmap.Edges.Length - edges.Length);
+            0,
+            0);
     }
+
+    /// <summary>The edges whose two ends are both on the map; a line to nowhere is worse than none.</summary>
+    internal static PlacedEdge[] JoinEdges(IReadOnlyDictionary<int, PlacedItem> placed, RoadmapEdgeResponse[] edges, bool straight) =>
+        edges
+            .Where(e => placed.ContainsKey(e.FromNumber) && placed.ContainsKey(e.ToNumber))
+            .Select(e => new PlacedEdge(e, placed[e.FromNumber], placed[e.ToNumber]) { Straight = straight })
+            .ToArray();
 
     private static readonly RoadmapBand[] Bands = [RoadmapBand.Now, RoadmapBand.Next, RoadmapBand.Later];
 
@@ -117,7 +186,15 @@ internal static class RoadmapLayout
     private static bool Shows(IssueFilter filter, RoadmapItemResponse item) =>
         filter.Matches(item.Band, item.Importance, item.Effort, item.State);
 
-    private sealed record SortedRoute(string Name, RoadmapItemResponse[] Closed, RoadmapItemResponse[][] Bands);
+    private sealed record SortedRoute(string Name, RoadmapItemResponse[] Closed, RoadmapItemResponse[][] Bands)
+    {
+        public SortedRoute Keep(HashSet<int> numbers) =>
+            this with
+            {
+                Closed = Closed.Where(x => numbers.Contains(x.Number)).ToArray(),
+                Bands = Bands.Select(b => b.Where(x => numbers.Contains(x.Number)).ToArray()).ToArray()
+            };
+    }
 }
 
 /// <summary>
@@ -125,36 +202,101 @@ internal static class RoadmapLayout
 /// <paramref name="FilteredItemCount"/> and <paramref name="FilteredEdgeCount"/> say what the filter
 /// left off, so the caption can admit it.
 /// </summary>
-internal sealed record RoadmapFigure(RoadmapLane[] Lanes, string[] Columns, PlacedItem[] Items, PlacedEdge[] Edges, double Width, double Height, int FilteredItemCount, int FilteredEdgeCount);
+internal sealed record RoadmapFigure(RoadmapLane[] Lanes, string[] Columns, PlacedItem[] Items, PlacedEdge[] Edges, double Width, double Height, int FilteredItemCount, int FilteredEdgeCount)
+{
+    /// <summary>The routes drawn, with their colours, for the legend.</summary>
+    public RoadmapRouteColour[] Routes { get; init; } = [];
+
+    /// <summary>
+    /// Network view only: where the cards with no link start, so the figure can label that block.
+    /// Null when there is none.
+    /// </summary>
+    public double? UnlinkedTop { get; init; }
+}
+
+/// <summary>One route and the colour it is drawn in.</summary>
+internal sealed record RoadmapRouteColour(string Name, string Colour);
 
 /// <summary>One lane band, from <paramref name="Top"/> down.</summary>
-internal sealed record RoadmapLane(string Name, double Top, double Height);
+internal sealed record RoadmapLane(string Name, double Top, double Height)
+{
+    public string Colour { get; init; } = RoadmapLayout.UnassignedRouteColour;
+}
 
 /// <summary>One issue box at a computed position.</summary>
 internal sealed record PlacedItem(RoadmapItemResponse Item, double X, double Y)
 {
-    public double CenterY => Y + RoadmapLayout.ItemHeight / 2;
-    public double Right => X + RoadmapLayout.ItemWidth;
+    public double Width { get; init; } = RoadmapLayout.ItemWidth;
+    public double Height { get; init; } = RoadmapLayout.ItemHeight;
+
+    /// <summary>The route the card belongs to, for the tooltip.</summary>
+    public string Route { get; init; }
+
+    /// <summary>The route's colour.</summary>
+    public string Colour { get; init; } = RoadmapLayout.UnassignedRouteColour;
+
+    public double CenterX => X + Width / 2;
+    public double CenterY => Y + Height / 2;
+    public double Right => X + Width;
 }
 
 /// <summary>One edge joining two placed boxes.</summary>
 internal sealed record PlacedEdge(RoadmapEdgeResponse Edge, PlacedItem From, PlacedItem To)
 {
+    /// <summary>A straight line between the two borders (network view) instead of the lanes' curve.</summary>
+    public bool Straight { get; init; }
+
     /// <summary>
-    /// A cubic bezier leaving the source's right edge and arriving at the target's left edge. When
-    /// the target sits left of the source the curve bows outward instead of doubling back through
-    /// the boxes between them.
+    /// Lanes: a cubic bezier leaving the source's right edge and arriving at the target's left edge.
+    /// When the target sits left of the source the curve bows outward instead of doubling back through
+    /// the boxes between them. Network: a straight line from border to border, aimed at the centres,
+    /// since a card there can sit on any side of the one it links to.
     /// </summary>
     public string Path()
     {
-        var x1 = From.Right;
+        if (Straight)
+        {
+            var (sx, sy) = Border(From, To.CenterX - From.CenterX, To.CenterY - From.CenterY);
+            var (tx, ty) = Border(To, From.CenterX - To.CenterX, From.CenterY - To.CenterY);
+            return Format($"M {Round(sx)} {Round(sy)} L {Round(tx)} {Round(ty)}");
+        }
+
         var y1 = From.CenterY;
-        var x2 = To.X;
         var y2 = To.CenterY;
-        var span = Math.Max(Math.Abs(x2 - x1), 48);
-        var bow = x2 >= x1 ? span * 0.4 : span * 0.6;
-        return Format($"M {x1} {y1} C {x1 + bow} {y1}, {x2 - bow} {y2}, {x2} {y2}");
+
+        // A target in the same column, or further left, is reached round the left side: leaving from
+        // the right edge would send the curve back across the source card to get there.
+        // Every curve ends in a short straight run into the target. Between neighbouring columns the
+        // gutter is narrow, so a curve that drops a whole lane is nearly vertical until its last few
+        // pixels, and the arrowhead (drawn on the end tangent) then sat on a bend and looked broken off.
+        var end = To.X - Lead;
+
+        if (To.X < From.Right)
+        {
+            var left = From.X;
+            var around = Math.Max(36, Math.Abs(y2 - y1) * 0.25) + Math.Max(0, left - To.X) * 0.5;
+            return Format($"M {left} {y1} C {Round(left - around)} {y1}, {Round(end - around)} {y2}, {end} {y2} L {To.X} {y2}");
+        }
+
+        var x1 = From.Right;
+        var bow = Math.Max(end - x1, 48) * 0.4;
+        return Format($"M {x1} {y1} C {Round(x1 + bow)} {y1}, {Round(end - bow)} {y2}, {end} {y2} L {To.X} {y2}");
     }
+
+    /// <summary>The straight run into a lane card: a little longer than the arrowhead it carries.</summary>
+    private const double Lead = 14;
+
+    /// <summary>Where a ray from the box's centre in direction (dx, dy) leaves the box.</summary>
+    private static (double X, double Y) Border(PlacedItem box, double dx, double dy)
+    {
+        if (dx == 0 && dy == 0) return (box.CenterX, box.CenterY);
+        var tx = dx == 0 ? double.MaxValue : box.Width / 2 / Math.Abs(dx);
+        var ty = dy == 0 ? double.MaxValue : box.Height / 2 / Math.Abs(dy);
+        var t = Math.Min(tx, ty);
+        return (box.CenterX + dx * t, box.CenterY + dy * t);
+    }
+
+    private static double Round(double value) => Math.Round(value, 1);
 
     private static string Format(FormattableString value) =>
         FormattableString.Invariant(value);
