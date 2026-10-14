@@ -32,99 +32,6 @@
     {
         @ViewControls()
 
-        @if (ShowHowToRead)
-        {
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
-                @if (_view == RoadmapView.Network)
-                {
-                    <div>
-                        <RadzenText TextStyle="TextStyle.Overline">Left to right</RadzenText>
-                        <RadzenText TextStyle="TextStyle.Body2">An arrow runs from what comes first to what it leads to. Cards that share no link sit in separate groups.</RadzenText>
-                    </div>
-                    <div>
-                        <RadzenText TextStyle="TextStyle.Overline">Colour is the route</RadzenText>
-                        <RadzenText TextStyle="TextStyle.Body2">The card's border and its outgoing arrows wear its route's colour.</RadzenText>
-                    </div>
-                }
-                else
-                {
-                    <div>
-                        <RadzenText TextStyle="TextStyle.Overline">Lanes are routes</RadzenText>
-                        <RadzenText TextStyle="TextStyle.Body2">Each row is one theme of work, not one person and not one release.</RadzenText>
-                    </div>
-                    <div>
-                        <RadzenText TextStyle="TextStyle.Overline">Left to right suggests</RadzenText>
-                        <RadzenText TextStyle="TextStyle.Body2">Now, Next and Later are a suggestion you may disagree with.</RadzenText>
-                    </div>
-                }
-                <div>
-                    <RadzenText TextStyle="TextStyle.Overline">Arrows constrain</RadzenText>
-                    <RadzenText TextStyle="TextStyle.Body2">An edge is a real dependency, and each one states its reason. Point at a card to pick out its own.</RadzenText>
-                </div>
-                <div>
-                    <RadzenText TextStyle="TextStyle.Overline">Effort rides along</RadzenText>
-                    <RadzenText TextStyle="TextStyle.Body2">S, M and L sit on the item. A ring marks a quick win.</RadzenText>
-                </div>
-            </div>
-
-            @* Identity is never colour alone: the lanes name their route in text, and the network view
-               has nothing else, so the legend is what makes its colours readable at all. *@
-            <div data-route-legend style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
-                @foreach (var route in _figure.Routes)
-                {
-                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
-                        <svg width="12" height="12" role="presentation">
-                            <rect x="1" y="1" width="10" height="10" rx="2" fill="@route.Colour"/>
-                        </svg>
-                        <RadzenText TextStyle="TextStyle.Body2" Style="margin: 0;">@route.Name</RadzenText>
-                    </span>
-                }
-            </div>
-
-            <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
-                @foreach (var kind in new[] { IssueLinkKind.Blocks, IssueLinkKind.Cheapens, IssueLinkKind.Overlaps })
-                {
-                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
-                        <svg width="42" height="10" role="presentation">
-                            <line x1="1" y1="5" x2="41" y2="5"
-                                  stroke="var(--rz-text-color)" stroke-width="2"
-                                  stroke-dasharray="@DashFor(kind)"/>
-                        </svg>
-                        <RadzenText TextStyle="TextStyle.Body2" Style="margin: 0;">@LegendFor(kind)</RadzenText>
-                    </span>
-                }
-            </div>
-
-            @* Without this the status bar is a colour nobody can decode. Named by shape rather than
-               by state name, because the names belong to the team's own workflow. *@
-            <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 1rem;">
-                @foreach (var kind in new[] { RoadmapStateKind.NotStarted, RoadmapStateKind.InProgress, RoadmapStateKind.Done })
-                {
-                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
-                        <svg width="10" height="10" role="presentation">
-                            <circle cx="5" cy="5" r="4" fill="@StatusColour(kind)"/>
-                        </svg>
-                        <RadzenText TextStyle="TextStyle.Body2" Style="margin: 0;">@StatusLegendFor(kind)</RadzenText>
-                    </span>
-                }
-                @* Only when one is actually drawn. The three above are shapes every workflow has, so
-                   they are unconditional; a resolution that does not count as a delivery is
-                   something a team opts into, and explaining a colour that cannot appear on this
-                   map is the same mistake as a colour with no legend, in the other direction. *@
-                @if (_figure.Items.Any(x => x.Item.ResolutionIsSuccess == false))
-                {
-                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
-                        <svg width="10" height="10" role="presentation">
-                            <circle cx="5" cy="5" r="4" fill="var(--rz-text-disabled-color)"/>
-                        </svg>
-                        <RadzenText TextStyle="TextStyle.Body2" Style="margin: 0;">
-                            Closed without delivering — faded, and the card names the reason
-                        </RadzenText>
-                    </span>
-                }
-            </div>
-        }
-
         @* The hover highlight is CSS, not a Blazor event: pointing at a card must not cost a server
            round trip per mouse move, and it has to work on a read-only map too. Every card and edge
            carries q-n{number} for itself and for each card it touches, so one rule per card lights
@@ -372,11 +279,12 @@
     private string _loadFailure;
 
     /// <summary>
-    /// Whether to render the legend and the "how to read it" cells above the figure. Leave this on
-    /// unless the surrounding page already explains the notation — a map a reader cannot decode is
-    /// just a diagram.
+    /// No longer renders anything. The "how to read it" cells and the legends were removed; the
+    /// route and link-kind choices that replaced the legends are part of the view controls (see
+    /// <see cref="ShowViewControls"/>). Kept so a host that sets it still renders.
     /// </summary>
     [Parameter]
+    [Obsolete("The legends and the how-to-read cells were removed. The route and link-kind choices are part of the view controls.")]
     public bool ShowHowToRead { get; set; } = true;
 
     /// <summary>
@@ -469,7 +377,12 @@
 
     // What the current figure was laid out from. The network layout is a few hundred passes over
     // every pair of cards, and a parent re-render calls OnParametersSet with nothing changed.
-    private (RoadmapResponse Roadmap, IssueFilter Filter, RoadmapView View, bool HideUnlinked) _laidOut;
+    private (RoadmapResponse Roadmap, IssueFilter Filter, RoadmapView View, bool HideUnlinked, string[] Routes, IssueLinkKind[] Kinds) _laidOut;
+
+    // The reader's route and link-kind choices. Empty means everything. A new array on every change,
+    // so the layout key above sees the change by reference.
+    private string[] _routeChoice = [];
+    private IssueLinkKind[] _kindChoice = [];
 
     // The last values the host passed. Adopted only when they change, so an unbound component keeps
     // the reader's choice through a parent re-render instead of snapping back to the default.
@@ -490,10 +403,10 @@
     {
         if (_roadmap == null) return;
 
-        var key = (_roadmap, Filter, _view, _hideUnlinked);
+        var key = (_roadmap, Filter, _view, _hideUnlinked, _routeChoice, _kindChoice);
         if (_figure != null && _laidOut == key) return;
 
-        _figure = RoadmapLayout.Build(_roadmap, Filter, _view, _hideUnlinked);
+        _figure = RoadmapLayout.Build(_roadmap, Filter, _view, _hideUnlinked, _routeChoice, _kindChoice);
         _laidOut = key;
 
         _neighbours = _figure.Items.ToDictionary(x => x.Item.Number, _ => new HashSet<int>());
@@ -580,7 +493,70 @@
                 <RadzenLabel Text="Hide cards with no links" Component="@($"{_id}-hide-unlinked")"/>
             </span>
         </div>
+
+        @* The routes, as a choice rather than a legend: picking some collapses the map to them, and
+           picking none shows every route. Each item still carries its colour, so the bar is also
+           the key to the colours, which in the network view are the only sign of a card's route. *@
+        @if (_figure?.Routes.Length > 0)
+        {
+            <div data-route-legend style="margin-bottom: 0.75rem;">
+                <RadzenSelectBar TValue="IEnumerable<string>" Multiple="true" Size="ButtonSize.Small"
+                                 Value="@_routeChoice" ValueChanged="@((IEnumerable<string> v) => SetRoutes(v))">
+                    <Items>
+                        @foreach (var route in _figure.Routes)
+                        {
+                            <RadzenSelectBarItem Value="@route.Name" Text="@route.Name">
+                                <Template>
+                                    <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                                        <svg width="12" height="12" role="presentation">
+                                            <rect x="1" y="1" width="10" height="10" rx="2" fill="@route.Colour"/>
+                                        </svg>
+                                        @route.Name
+                                    </span>
+                                </Template>
+                            </RadzenSelectBarItem>
+                        }
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+        }
+
+        @* The kinds of link, chosen the same way: none picked draws every kind. The line sample is
+           the key to the dashes. *@
+        <div data-kind-legend style="margin-bottom: 1rem;">
+            <RadzenSelectBar TValue="IEnumerable<IssueLinkKind>" Multiple="true" Size="ButtonSize.Small"
+                             Value="@_kindChoice" ValueChanged="@((IEnumerable<IssueLinkKind> v) => SetKinds(v))">
+                <Items>
+                    @foreach (var kind in new[] { IssueLinkKind.Blocks, IssueLinkKind.Cheapens, IssueLinkKind.Overlaps })
+                    {
+                        <RadzenSelectBarItem Value="@kind" Text="@kind.ToString()">
+                            <Template>
+                                <span style="display: inline-flex; align-items: center; gap: 0.4rem;" title="@LegendFor(kind)">
+                                    <svg width="34" height="10" role="presentation">
+                                        <line x1="1" y1="5" x2="33" y2="5" stroke="currentColor" stroke-width="2"
+                                              stroke-dasharray="@DashFor(kind)"/>
+                                    </svg>
+                                    @kind
+                                </span>
+                            </Template>
+                        </RadzenSelectBarItem>
+                    }
+                </Items>
+            </RadzenSelectBar>
+        </div>
     };
+
+    private void SetRoutes(IEnumerable<string> routes)
+    {
+        _routeChoice = (routes ?? []).ToArray();
+        Relayout();
+    }
+
+    private void SetKinds(IEnumerable<IssueLinkKind> kinds)
+    {
+        _kindChoice = (kinds ?? []).ToArray();
+        Relayout();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -686,13 +662,6 @@
     /// </summary>
     private static string StateLabel(RoadmapItemResponse item) =>
         string.IsNullOrWhiteSpace(item.Resolution) ? item.State : $"{item.State} · {item.Resolution}";
-
-    private static string StatusLegendFor(RoadmapStateKind kind) => kind switch
-    {
-        RoadmapStateKind.InProgress => "In progress — somebody is on it",
-        RoadmapStateKind.Done => "Done — drawn in the Closed column, faded",
-        _ => "Not started — the workflow's entry state"
-    };
 
     /// <summary>
     /// The host's roster wins over the server's, then the server's resolved name, then the raw key.

@@ -64,9 +64,18 @@ internal static class RoadmapLayout
     /// Drops a card with no edge left on the map once the filter has run. Judged after the filter,
     /// since a link to a hidden card is not one the reader can see either.
     /// </param>
-    public static RoadmapFigure Build(RoadmapResponse roadmap, IssueFilter filter = null, RoadmapView view = RoadmapView.Lanes, bool hideUnlinked = false)
+    /// <param name="routeNames">The routes to draw. Null or empty draws every route.</param>
+    /// <param name="linkKinds">The kinds of link to draw. Null or empty draws every kind.</param>
+    public static RoadmapFigure Build(RoadmapResponse roadmap, IssueFilter filter = null, RoadmapView view = RoadmapView.Lanes, bool hideUnlinked = false,
+        IReadOnlyCollection<string> routeNames = null, IReadOnlyCollection<IssueLinkKind> linkKinds = null)
     {
         filter ??= IssueFilter.None;
+
+        // A kind left out is gone from the map entirely: not drawn, and not counted as a link by
+        // "hide cards with no links" either.
+        var edges = linkKinds is { Count: > 0 }
+            ? roadmap.Edges.Where(e => linkKinds.Contains(e.Kind)).ToArray()
+            : roadmap.Edges;
 
         // Colour follows the route, never its position on the drawn map: slots come from the whole
         // projection, so filtering a lane away does not repaint the ones left.
@@ -77,10 +86,20 @@ internal static class RoadmapLayout
 
         var routes = roadmap.Routes.Select(route => Sort(route, filter)).ToArray();
 
+        // Every route the filter leaves something in, whether or not it is picked: this is what a
+        // host offers as the route choices, so it must not shrink to the routes already chosen.
+        var legend = routes
+            .Where(x => x.Closed.Length + x.Bands.Sum(b => b.Length) > 0)
+            .Select(x => new RoadmapRouteColour(x.Name, routeColours[x.Name]))
+            .ToArray();
+
+        if (routeNames is { Count: > 0 })
+            routes = routes.Where(x => routeNames.Contains(x.Name, StringComparer.Ordinal)).ToArray();
+
         if (hideUnlinked)
         {
             var shown = routes.SelectMany(x => x.Closed.Concat(x.Bands.SelectMany(b => b))).Select(x => x.Number).ToHashSet();
-            var linked = roadmap.Edges
+            var linked = edges
                 .Where(e => shown.Contains(e.FromNumber) && shown.Contains(e.ToNumber))
                 .SelectMany(e => new[] { e.FromNumber, e.ToNumber })
                 .ToHashSet();
@@ -89,14 +108,10 @@ internal static class RoadmapLayout
 
         var shownCount = routes.Sum(x => x.Closed.Length + x.Bands.Sum(b => b.Length));
         var totalCount = roadmap.Routes.Sum(x => x.Now.Length + x.Next.Length + x.Later.Length + (x.Closed ?? []).Length);
-        var legend = routes
-            .Where(x => x.Closed.Length + x.Bands.Sum(b => b.Length) > 0)
-            .Select(x => new RoadmapRouteColour(x.Name, routeColours[x.Name]))
-            .ToArray();
 
         var figure = view == RoadmapView.Network
-            ? RoadmapNetworkLayout.Place(routes.SelectMany(r => r.Closed.Concat(r.Bands.SelectMany(b => b)).Select(i => (i, r.Name, routeColours[r.Name]))).ToArray(), roadmap.Edges)
-            : PlaceLanes(routes, roadmap.Edges, filter, routeColours);
+            ? RoadmapNetworkLayout.Place(routes.SelectMany(r => r.Closed.Concat(r.Bands.SelectMany(b => b)).Select(i => (i, r.Name, routeColours[r.Name]))).ToArray(), edges)
+            : PlaceLanes(routes, edges, filter, routeColours);
 
         return figure with
         {
