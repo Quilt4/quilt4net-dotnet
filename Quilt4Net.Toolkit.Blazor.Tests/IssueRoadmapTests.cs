@@ -91,12 +91,13 @@ public class IssueRoadmapTests : BunitContext
         {
             CultureInfo.CurrentCulture = new CultureInfo("sv-SE");
             var figure = RoadmapLayout.Build(Roadmap(
-                new[] { Edge(1, 2, IssueLinkKind.Cheapens, "cheaper after") },
-                Route("r", now: [Item(1)], next: [Item(2)])));
+                new[] { Edge(4, 1, IssueLinkKind.Cheapens, "cheaper after") },
+                Route("r", now: [Item(1), Item(2), Item(3), Item(4)])));
 
             var path = figure.Edges[0].Path();
 
-            // The bow is a fraction of the span, so this path genuinely has non-integer coordinates —
+            // A link back up its own column bows out by a quarter of the drop (258 / 4 = 64.5), so
+            // this path genuinely has non-integer coordinates —
             // without which the assertion below would hold no matter how the string was built.
             path.Should().MatchRegex(@"\d\.\d", "the sample must contain a decimal, or this test proves nothing");
 
@@ -235,7 +236,7 @@ public class IssueRoadmapTests : BunitContext
         // RadzenText it renders and one of them came out as "5u1OjIFAi0" — a two-character needle
         // hits one of those roughly once in forty renders. Asserting the node's own text is both
         // stable and stricter: it says the key is not shown *here*, which is the actual claim.
-        cut.Find("[data-assignee]").TextContent.Should().Be("Daniel");
+        cut.Find("[data-assignee]").GetAttribute("data-tip").Should().Be("Assigned to Daniel");
     }
 
     [Fact]
@@ -245,7 +246,7 @@ public class IssueRoadmapTests : BunitContext
 
         var cut = Render<IssueRoadmap>(p => p.Add(x => x.MemberNames, new Dictionary<string, string> { ["u1"] = "Fresh" }));
 
-        cut.Find("[data-assignee]").TextContent.Should().Be("Fresh");
+        cut.Find("[data-assignee]").GetAttribute("data-tip").Should().Be("Assigned to Fresh");
     }
 
     [Fact]
@@ -255,7 +256,7 @@ public class IssueRoadmapTests : BunitContext
 
         var cut = Render<IssueRoadmap>();
 
-        cut.Find("[data-assignee]").TextContent.Should().Be("gone",
+        cut.Find("[data-assignee]").GetAttribute("data-tip").Should().Be("Assigned to gone",
             "an issue parked on somebody who will never see it should look wrong, not unassigned");
     }
 
@@ -326,20 +327,67 @@ public class IssueRoadmapTests : BunitContext
         // The machine is the half that matters: the collision a claim exists to show is one person's
         // two sessions, and "danie" alone cannot tell them apart.
         var node = cut.Find("[data-claim]");
-        node.TextContent.Should().Be("danie · NEPTUNUS");
+        node.GetAttribute("data-tip").Should().StartWith("Claimed by danie on NEPTUNUS, last seen");
         node.GetAttribute("data-stale").Should().Be("false");
     }
 
     [Fact]
-    public void A_claim_takes_the_assignees_corner()
+    public void An_assigned_and_claimed_card_shows_the_avatar_with_the_machine_in_its_tooltip()
     {
         _issueService.Roadmap = Roadmap(Route("r", now: [Item(1, assignedUserKey: "u1", assignedUserName: "Daniel", claim: Claim("danie", "NEPTUNUS"))]));
 
         var cut = Render<IssueRoadmap>(p => p.Add(x => x.OnItemSelected, _ => { }));
 
-        cut.FindAll("[data-assignee]").Should().BeEmpty("the card has one corner for a name, and the live claim wins it");
-        cut.Find("[data-claim]").TextContent.Should().Be("danie · NEPTUNUS");
-        cut.Find("button[data-issue='1']").GetAttribute("title").Should().Contain("Daniel", "the assignee is not lost, only moved to the tooltip");
+        var mark = cut.Find("[data-assignee]");
+        mark.GetAttribute("data-tip").Should().StartWith("Assigned to Daniel\nClaimed by danie on NEPTUNUS, last seen");
+        mark.QuerySelector("[data-claim]").Should().NotBeNull("a live claim is a dot on the avatar, so it shows without pointing at it");
+
+        // The card's button covers the drawing, so the avatar's tooltip needs its own target on top.
+        cut.Find("[data-person='1']").GetAttribute("title").Should().Be(mark.GetAttribute("data-tip"));
+    }
+
+    [Fact]
+    public void The_avatar_draws_the_picture_over_the_initials()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1, assignedUserKey: "u1", assignedUserName: "Daniel Bohlin", assignedUserIconUrl: "https://example.test/u1.png")]));
+
+        var cut = Render<IssueRoadmap>();
+
+        // Both, because an image that fails to load draws nothing in SVG and the initials then show.
+        cut.Find("[data-avatar]").GetAttribute("href").Should().Be("https://example.test/u1.png");
+        cut.Find("[data-initials]").TextContent.Should().Be("DB");
+    }
+
+    [Fact]
+    public void Without_a_picture_the_avatar_is_the_initials()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1, assignedUserKey: "u1", assignedUserName: "Daniel")]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.FindAll("[data-avatar]").Should().BeEmpty();
+        cut.Find("[data-initials]").TextContent.Should().Be("D");
+    }
+
+    [Fact]
+    public void A_claim_without_an_assignee_draws_a_machine()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1, claim: Claim("danie", "NEPTUNUS"))]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.FindAll("[data-assignee]").Should().BeEmpty();
+        cut.Find("[data-claim]").QuerySelector("rect").Should().NotBeNull("the machine is drawn as a screen");
+    }
+
+    [Fact]
+    public void The_person_mark_is_drawn_in_the_network_view_too()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1, assignedUserKey: "u1", assignedUserName: "Daniel")]));
+
+        var cut = Render<IssueRoadmap>(p => p.Add(x => x.View, RoadmapView.Network));
+
+        cut.FindAll("[data-assignee]").Should().HaveCount(1);
     }
 
     [Fact]
@@ -360,7 +408,7 @@ public class IssueRoadmapTests : BunitContext
         // Asserted on the drawing rather than only the flag: a stale marker that renders identically
         // is the bug this guards against, since "somebody is on it" and "somebody was" must not look alike.
         stale.GetAttribute("opacity").Should().NotBe(live.GetAttribute("opacity"));
-        stale.GetAttribute("fill").Should().NotBe(live.GetAttribute("fill"));
+        stale.QuerySelector("rect").GetAttribute("stroke").Should().NotBe(live.QuerySelector("rect").GetAttribute("stroke"));
     }
 
     [Fact]
@@ -370,7 +418,7 @@ public class IssueRoadmapTests : BunitContext
 
         var cut = Render<IssueRoadmap>();
 
-        cut.Find("[data-claim]").TextContent.Should().Be("NEPTUNUS");
+        cut.Find("[data-claim]").GetAttribute("data-tip").Should().StartWith("Claimed on NEPTUNUS,");
     }
 
     [Fact]
@@ -555,6 +603,266 @@ public class IssueRoadmapTests : BunitContext
         cut.Markup.Should().Contain("Nothing matches the filter.");
     }
 
+    [Fact]
+    public void A_route_keeps_its_colour_when_the_filter_removes_the_lane_before_it()
+    {
+        var roadmap = Roadmap(
+            Route("first", now: [Item(1, importance: IssueImportance.Nice)]),
+            Route("second", now: [Item(2)]));
+
+        var whole = RoadmapLayout.Build(roadmap);
+        var filtered = RoadmapLayout.Build(roadmap, new IssueFilter { Importances = [IssueImportance.Important] });
+
+        filtered.Lanes.Should().ContainSingle();
+        filtered.Lanes[0].Colour.Should().Be(whole.Lanes[1].Colour, "colour follows the route, never its position on the drawn map");
+        filtered.Items[0].Colour.Should().Be(whole.Items.Single(x => x.Item.Number == 2).Colour);
+    }
+
+    [Fact]
+    public void Every_route_gets_a_colour_and_the_palette_repeats_past_its_end()
+    {
+        var routes = Enumerable.Range(1, RoadmapLayout.RoutePalette.Length + 1)
+            .Select(i => Route($"r{i}", now: [Item(i)]))
+            .ToArray();
+
+        var figure = RoadmapLayout.Build(Roadmap(routes));
+
+        figure.Lanes.Take(RoadmapLayout.RoutePalette.Length).Select(x => x.Colour).Should().Equal(RoadmapLayout.RoutePalette);
+        figure.Lanes.Last().Colour.Should().Be(RoadmapLayout.RoutePalette[0]);
+        RoadmapLayout.RoutePalette.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void Hiding_unlinked_cards_drops_them_and_counts_them_as_filtered()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "first") },
+            Route("r", now: [Item(1), Item(3)], next: [Item(2)])), hideUnlinked: true);
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 2]);
+        figure.FilteredItemCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void A_link_to_a_filtered_out_card_does_not_keep_a_card_on_the_map()
+    {
+        // The reader cannot see that link either, so the card is as unlinked as one with none.
+        var figure = RoadmapLayout.Build(Roadmap(
+                new[] { Edge(2, 1, IssueLinkKind.Blocks, "done first") },
+                Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")])),
+            new IssueFilter { States = ["Todo"] }, hideUnlinked: true);
+
+        figure.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void No_two_cards_overlap_in_the_network_view()
+    {
+        var figure = RoadmapLayout.Build(Swarm(40), view: RoadmapView.Network);
+
+        figure.Items.Should().HaveCount(40);
+        foreach (var a in figure.Items)
+        {
+            foreach (var b in figure.Items.Where(x => x != a))
+            {
+                var apart = a.Right <= b.X || b.Right <= a.X || a.Y + a.Height <= b.Y || b.Y + b.Height <= a.Y;
+                apart.Should().BeTrue($"#{a.Item.Number} and #{b.Item.Number} should not overlap");
+            }
+        }
+    }
+
+    [Fact]
+    public void The_network_view_draws_the_same_picture_every_time()
+    {
+        var first = RoadmapLayout.Build(Swarm(30), view: RoadmapView.Network);
+        var second = RoadmapLayout.Build(Swarm(30), view: RoadmapView.Network);
+
+        first.Items.Select(x => (x.Item.Number, x.X, x.Y)).Should().Equal(second.Items.Select(x => (x.Item.Number, x.X, x.Y)));
+    }
+
+    [Fact]
+    public void Linked_cards_are_close_and_unlinked_ones_are_set_out_underneath()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(3, 4, IssueLinkKind.Blocks, "b") },
+            Route("r", now: [Item(1), Item(2), Item(3), Item(4), Item(5), Item(6)])), view: RoadmapView.Network);
+
+        var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
+        figure.UnlinkedTop.Should().NotBeNull();
+        byNumber[5].Y.Should().BeGreaterThan(figure.UnlinkedTop!.Value);
+        byNumber[6].Y.Should().BeGreaterThan(figure.UnlinkedTop.Value);
+        new[] { 1, 2, 3, 4 }.Should().OnlyContain(n => byNumber[n].Y + byNumber[n].Height < figure.UnlinkedTop.Value);
+
+    }
+
+    [Fact]
+    public void A_link_pulls_two_cards_closer_than_a_card_two_links_away()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(2, 3, IssueLinkKind.Blocks, "b"), Edge(3, 4, IssueLinkKind.Blocks, "c") },
+            Route("r", now: [Item(1), Item(2), Item(3), Item(4)])), view: RoadmapView.Network);
+
+        var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
+        double Distance(int a, int b) => Math.Abs(byNumber[a].CenterX - byNumber[b].CenterX) + Math.Abs(byNumber[a].CenterY - byNumber[b].CenterY);
+        Distance(1, 2).Should().BeLessThan(Distance(1, 4));
+    }
+
+    [Fact]
+    public void Separate_clusters_are_packed_side_by_side_rather_than_pushed_apart()
+    {
+        // Simulated together, two clusters with no link between them only repel each other.
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(3, 4, IssueLinkKind.Blocks, "b"), Edge(5, 6, IssueLinkKind.Blocks, "c") },
+            Route("r", now: [Item(1), Item(2), Item(3), Item(4), Item(5), Item(6)])), view: RoadmapView.Network);
+
+        var widest = 2 * (RoadmapNetworkLayout.ItemWidth + RoadmapNetworkLayout.ClusterGap) + 2 * RoadmapNetworkLayout.Padding;
+        figure.Width.Should().BeLessThan(3 * widest, "three two-card clusters fit in about three cluster widths");
+        figure.Height.Should().BeLessThan(6 * (RoadmapNetworkLayout.ItemHeight + RoadmapNetworkLayout.ClusterGap));
+    }
+
+    [Fact]
+    public void Network_arrows_run_left_to_right()
+    {
+        var figure = RoadmapLayout.Build(Swarm(40), view: RoadmapView.Network);
+
+        // A loop has no left-to-right reading; Swarm draws none, so every arrow must point right.
+        foreach (var edge in figure.Edges.Where(x => x.Edge.Kind != IssueLinkKind.Overlaps))
+        {
+            edge.To.X.Should().BeGreaterThan(edge.From.Right, $"#{edge.From.Item.Number} leads to #{edge.To.Item.Number}");
+        }
+    }
+
+    [Fact]
+    public void A_loop_of_links_is_still_laid_out()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(2, 3, IssueLinkKind.Blocks, "b"), Edge(3, 1, IssueLinkKind.Blocks, "c"), Edge(3, 4, IssueLinkKind.Overlaps, "d") },
+            Route("r", now: [Item(1), Item(2), Item(3), Item(4)])), view: RoadmapView.Network);
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 2, 3, 4]);
+        figure.Edges.Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void A_lane_arrow_arrives_on_a_straight_run()
+    {
+        // Neighbouring columns, a lane apart: the case where the arrowhead sat on a steep bend.
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("first", now: [Item(1)]),
+            Route("second", next: [Item(2)])));
+
+        var edge = figure.Edges.Single();
+        var tail = System.Text.RegularExpressions.Regex.Match(edge.Path(), @"(-?[\d.]+) (-?[\d.]+) L (-?[\d.]+) (-?[\d.]+)$");
+        tail.Success.Should().BeTrue("the curve should end in a straight segment");
+        double At(int group) => double.Parse(tail.Groups[group].Value, CultureInfo.InvariantCulture);
+        At(2).Should().Be(At(4), "the run is level");
+        (At(3) - At(1)).Should().BeGreaterThanOrEqualTo(12, "at least as long as the arrowhead");
+        At(3).Should().Be(edge.To.X);
+    }
+
+    [Fact]
+    public void A_network_edge_runs_from_border_to_border()
+    {
+        var figure = RoadmapLayout.Build(Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("r", now: [Item(1), Item(2)])), view: RoadmapView.Network);
+
+        var edge = figure.Edges.Single();
+        var numbers = System.Text.RegularExpressions.Regex.Matches(edge.Path(), @"-?\d+(\.\d+)?").Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture)).ToArray();
+        OnBorder(edge.From, numbers[0], numbers[1]).Should().BeTrue();
+        OnBorder(edge.To, numbers[2], numbers[3]).Should().BeTrue();
+
+        static bool OnBorder(PlacedItem box, double x, double y) =>
+            (Math.Abs(x - box.X) < 0.2 || Math.Abs(x - box.Right) < 0.2) && y >= box.Y - 0.2 && y <= box.Y + box.Height + 0.2
+            || (Math.Abs(y - box.Y) < 0.2 || Math.Abs(y - box.Y - box.Height) < 0.2) && x >= box.X - 0.2 && x <= box.Right + 0.2;
+    }
+
+    [Fact]
+    public void A_full_size_map_lays_out_quickly()
+    {
+        // The size that prompted the network view: about 150 cards and as many links.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        RoadmapLayout.Build(Swarm(160), view: RoadmapView.Network);
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void An_edge_wears_its_source_routes_colour()
+    {
+        _issueService.Roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("first", now: [Item(1)]),
+            Route("second", now: [Item(2)]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.Find("path.q-edge").GetAttribute("stroke").Should().Be(RoadmapLayout.RoutePalette[0]);
+        cut.FindAll("[data-route-legend] rect").Select(x => x.GetAttribute("fill")).Should().Equal(RoadmapLayout.RoutePalette[0], RoadmapLayout.RoutePalette[1]);
+    }
+
+    [Fact]
+    public void Pointing_at_a_card_lights_its_edges_and_neighbours_but_a_loner_gets_no_rule()
+    {
+        _issueService.Roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("r", now: [Item(1), Item(3)], next: [Item(2)]));
+
+        var cut = Render<IssueRoadmap>();
+
+        var css = cut.Find("style").TextContent;
+        css.Should().Contain("[data-hover=\"1\"]:hover");
+        css.Should().Contain("[data-hover=\"2\"]:hover");
+        css.Should().NotContain("[data-hover=\"3\"]:hover", "pointing at a card with no link must not blank the map");
+
+        cut.Find("g[data-hover='2']").GetAttribute("class").Split(' ').Should().Contain(["q-n2", "q-n1", "q-linked"]);
+        cut.Find("path.q-edge").GetAttribute("class").Split(' ').Should().Contain(["q-n1", "q-n2"]);
+    }
+
+    [Fact]
+    public void The_view_switch_redraws_as_a_network()
+    {
+        _issueService.Roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("r", now: [Item(1), Item(3)], next: [Item(2)]));
+        RoadmapView? reported = null;
+
+        var cut = Render<IssueRoadmap>(p => p.Add(x => x.ViewChanged, v => reported = v));
+        cut.FindAll("text[data-column]").Should().NotBeEmpty();
+
+        cut.FindAll("[data-view-controls] .rz-selectbar .rz-button")[1].Click();
+
+        cut.Find("[data-view]").GetAttribute("data-view").Should().Be("network");
+        cut.FindAll("text[data-column]").Should().BeEmpty("the network view has no band columns");
+        cut.Find("text[data-unlinked]").TextContent.Should().Be("NO LINKS");
+        reported.Should().Be(RoadmapView.Network);
+    }
+
+    [Fact]
+    public void An_unbound_view_survives_a_parent_re_render()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1)]));
+        var cut = Render<IssueRoadmap>();
+
+        cut.FindAll("[data-view-controls] .rz-selectbar .rz-button")[1].Click();
+        cut.Render(p => p.Add(x => x.Filter, IssueFilter.None));
+
+        cut.Find("[data-view]").GetAttribute("data-view").Should().Be("network");
+    }
+
+    /// <summary>A chain-and-branch graph of the given size, spread over three routes.</summary>
+    private static RoadmapResponse Swarm(int count)
+    {
+        var items = Enumerable.Range(1, count).Select(n => Item(n)).ToArray();
+        var edges = Enumerable.Range(2, count - 1)
+            .Select(n => Edge(n % 3 == 0 ? n / 3 : n - 1, n, IssueLinkKind.Blocks, "x"))
+            .ToArray();
+        return Roadmap(edges,
+            Route("a", now: items.Where(x => x.Number % 3 == 0).ToArray()),
+            Route("b", next: items.Where(x => x.Number % 3 == 1).ToArray()),
+            Route("c", later: items.Where(x => x.Number % 3 == 2).ToArray()));
+    }
+
     private static IssueClaimResponse Claim(string user, string machine, bool stale = false, DateTime? lastSeen = null) => new()
     {
         User = user,
@@ -603,8 +911,10 @@ public class IssueRoadmapTests : BunitContext
 
     private static RoadmapItemResponse Item(int number, bool terminal = false, bool quickWin = false, string assignedUserKey = null, string assignedUserName = null,
         string state = "Todo", RoadmapStateKind kind = RoadmapStateKind.NotStarted, string resolution = null, bool? resolutionIsSuccess = null,
-        IssueClaimResponse claim = null, RoadmapBand? band = null, IssueImportance? importance = IssueImportance.Important, IssueEffort? effort = IssueEffort.S) => new()
+        IssueClaimResponse claim = null, RoadmapBand? band = null, IssueImportance? importance = IssueImportance.Important, IssueEffort? effort = IssueEffort.S,
+        string assignedUserIconUrl = null) => new()
     {
+        AssignedUserIconUrl = assignedUserIconUrl ?? string.Empty,
         Band = band,
         Importance = importance,
         Claim = claim,

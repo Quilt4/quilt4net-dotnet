@@ -28,6 +28,10 @@ public record RoadmapResponse
     /// lane cap.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Always 0 from a current server, which draws every route. Kept, and still reported by the
+    /// component, for servers that predate that and capped the map at six lanes.
+    /// </para>
     /// Counted separately from <see cref="UnroutedCount"/> because the two have different fixes and
     /// conflating them produces a false statement. The first version reported both as "carry no
     /// route", which was wrong the first time a real import exceeded the lane cap: three parked
@@ -121,6 +125,17 @@ public record RoadmapItemResponse
     /// the board does: an issue parked on somebody who will never see it should look wrong.
     /// </remarks>
     public string AssignedUserName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// An absolute URL of the assignee's picture, or empty when unassigned, when the member has no
+    /// picture, or from a server that predates the field.
+    /// </summary>
+    /// <remarks>
+    /// Resolved on the server for the same reason as <see cref="AssignedUserName"/>: an embedding
+    /// project holds no roster and no icon store. Absolute because a relative path would resolve
+    /// against the embedding site, not Quilt4Net. Empty draws the assignee's initials instead.
+    /// </remarks>
+    public string AssignedUserIconUrl { get; init; } = string.Empty;
 
     /// <summary>
     /// Who says they are working on this, and from which machine; <c>null</c> when nobody holds it
