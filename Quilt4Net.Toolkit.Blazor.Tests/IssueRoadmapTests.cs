@@ -306,15 +306,80 @@ public class IssueRoadmapTests : BunitContext
     }
 
     [Fact]
-    public void The_legend_explains_a_dropped_ending_only_when_one_is_drawn()
+    public void Picking_routes_draws_only_those_routes()
     {
-        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1)]));
-        Render<IssueRoadmap>().Markup.Should().NotContain("Closed without delivering",
-            "explaining a colour that cannot appear on this map is clutter");
+        var roadmap = Roadmap(
+            Route("first", now: [Item(1)]),
+            Route("second", now: [Item(2)]),
+            Route("third", now: [Item(3)]));
 
-        _issueService.Roadmap = Roadmap(Route("r", now:
-            [Item(2, terminal: true, state: "Closed", kind: RoadmapStateKind.Done, resolution: "Won't do", resolutionIsSuccess: false)]));
-        Render<IssueRoadmap>().Markup.Should().Contain("Closed without delivering");
+        var figure = RoadmapLayout.Build(roadmap, routeNames: ["second"]);
+
+        figure.Lanes.Select(x => x.Name).Should().Equal("second");
+        figure.Items.Select(x => x.Item.Number).Should().Equal(2);
+    }
+
+    [Fact]
+    public void Picking_no_route_draws_every_route()
+    {
+        var roadmap = Roadmap(Route("first", now: [Item(1)]), Route("second", now: [Item(2)]));
+
+        RoadmapLayout.Build(roadmap, routeNames: []).Lanes.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Picking_a_route_keeps_every_route_on_offer_and_its_colour()
+    {
+        var roadmap = Roadmap(
+            Route("first", now: [Item(1)]),
+            Route("second", now: [Item(2)]));
+
+        var figure = RoadmapLayout.Build(roadmap, routeNames: ["second"]);
+
+        // The routes are the choices a reader picks from, so they must not shrink to the ones chosen,
+        // and a route keeps its colour when its neighbours are put away.
+        figure.Routes.Select(x => x.Name).Should().Equal("first", "second");
+        figure.Lanes.Single().Colour.Should().Be(RoadmapLayout.RoutePalette[1]);
+    }
+
+    [Fact]
+    public void Picking_link_kinds_draws_only_those_links()
+    {
+        var roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(2, 3, IssueLinkKind.Overlaps, "b") },
+            Route("r", now: [Item(1), Item(2), Item(3)]));
+
+        var figure = RoadmapLayout.Build(roadmap, linkKinds: [IssueLinkKind.Overlaps]);
+
+        figure.Edges.Select(x => x.Edge.Kind).Should().Equal(IssueLinkKind.Overlaps);
+    }
+
+    [Fact]
+    public void A_link_kind_left_out_does_not_count_as_a_link_for_hide_unlinked()
+    {
+        var roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a"), Edge(2, 3, IssueLinkKind.Overlaps, "b") },
+            Route("r", now: [Item(1), Item(2), Item(3)]));
+
+        var figure = RoadmapLayout.Build(roadmap, hideUnlinked: true, linkKinds: [IssueLinkKind.Overlaps]);
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([2, 3]);
+    }
+
+    [Fact]
+    public void The_routes_and_link_kinds_are_offered_as_choices_not_legends()
+    {
+        _issueService.Roadmap = Roadmap(
+            new[] { Edge(1, 2, IssueLinkKind.Blocks, "a") },
+            Route("first", now: [Item(1)]),
+            Route("second", now: [Item(2)]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.Find("[data-route-legend]").QuerySelectorAll(".rz-button").Should().HaveCount(2);
+        cut.Find("[data-kind-legend]").QuerySelectorAll(".rz-button").Should().HaveCount(3);
+        cut.Markup.Should().NotContain("Not started — the workflow's entry state");
+        cut.Markup.Should().NotContain("Lanes are routes");
     }
 
     [Fact]
