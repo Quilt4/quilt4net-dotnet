@@ -73,20 +73,23 @@ internal static class RoadmapNetworkLayout
 
         if (clusters.Length > 0)
         {
-            // Rows about as wide as the clusters would be if laid out square, and never narrower than
-            // the widest one, so a figure reads like a page rather than a strip.
+            // Stacked in columns rather than laid in rows. A layered cluster is narrow and tall - a
+            // real backlog's main cluster runs a few columns wide and dozens of cards deep - so rows
+            // put every small cluster in a strip along the top and left the paper under them empty.
+            // Columns as tall as the tallest cluster, or as the clusters would be laid out square,
+            // fill the space beside it instead.
             var area = clusters.Sum(x => (x.Width + ClusterGap) * (x.Height + ClusterGap));
-            var rowWidth = Math.Max(clusters.Max(x => x.Width), Math.Sqrt(area) * 1.5);
+            var columnHeight = Math.Max(clusters.Max(x => x.Height), Math.Sqrt(area));
             var byNumber = linked.ToDictionary(x => x.Item.Number);
 
-            double x = 0, y = 0, rowHeight = 0;
-            foreach (var cluster in clusters)
+            double x = 0, y = 0, columnWidth = 0;
+            foreach (var cluster in clusters.OrderByDescending(c => c.Height).ThenByDescending(c => c.Centres.Count).ThenBy(c => c.Centres.Keys.Min()))
             {
-                if (x > 0 && x + cluster.Width > rowWidth)
+                if (y > 0 && y + cluster.Height > columnHeight)
                 {
-                    x = 0;
-                    y += rowHeight + ClusterGap;
-                    rowHeight = 0;
+                    y = 0;
+                    x += columnWidth + ClusterGap;
+                    columnWidth = 0;
                 }
 
                 foreach (var (number, c) in cluster.Centres)
@@ -95,8 +98,8 @@ internal static class RoadmapNetworkLayout
                     placed[number] = Card(item, route, colour, Padding + x + c.X, Padding + y + c.Y);
                 }
 
-                x += cluster.Width + ClusterGap;
-                rowHeight = Math.Max(rowHeight, cluster.Height);
+                y += cluster.Height + ClusterGap;
+                columnWidth = Math.Max(columnWidth, cluster.Width);
             }
 
             width = placed.Values.Max(p => p.Right) + Padding;
@@ -174,10 +177,13 @@ internal static class RoadmapNetworkLayout
         var rank = new double[count];
         foreach (var column in columns) for (var i = 0; i < column.Count; i++) rank[column[i]] = i;
 
+        // Every neighbour counts, also one in the same column: a pair linked within a column (an
+        // overlaps link between two cards that both have directed links) is then pulled next to
+        // each other instead of being left at opposite ends of a tall column.
         double Across(int i, double[] value, double fallback)
         {
-            var others = neighbours[i].Where(n => layer[n] != layer[i]).ToArray();
-            return others.Length == 0 ? fallback : others.Average(n => value[n]);
+            var others = neighbours[i];
+            return others.Count == 0 ? fallback : others.Average(n => value[n]);
         }
 
         for (var sweep = 0; sweep < OrderSweeps; sweep++)
@@ -191,8 +197,13 @@ internal static class RoadmapNetworkLayout
         }
 
         // Rows: stacked, then nudged towards the neighbours' rows so a chain runs level, but never
-        // closer than a card and a gap.
+        // closer than a card and a gap, and never outside the height the fullest column needs. The
+        // bound is what keeps a real backlog readable: unbounded, each card chased its neighbours and
+        // the cluster grew half as tall again as its fullest column, mostly empty.
         const double pitch = ItemHeight + RowGap;
+        var deepest = columns.Max(c => c.Count);
+        double Clamp(double value, int index, int length) => Math.Clamp(value, index * pitch, (deepest - length + index) * pitch);
+
         var y = new double[count];
         foreach (var column in columns) for (var i = 0; i < column.Count; i++) y[column[i]] = i * pitch;
         for (var pass = 0; pass < SpacingPasses; pass++)
@@ -200,10 +211,14 @@ internal static class RoadmapNetworkLayout
             foreach (var column in pass % 2 == 0 ? columns : columns.Reverse())
             {
                 var wanted = column.Select(i => Across(i, y, y[i])).ToArray();
-                for (var i = 0; i < column.Count; i++) y[column[i]] = i == 0 ? wanted[i] : Math.Max(wanted[i], y[column[i - 1]] + pitch);
-                for (var i = column.Count - 2; i >= 0; i--) y[column[i]] = Math.Min(y[column[i]], y[column[i + 1]] - pitch);
+                for (var i = 0; i < column.Count; i++)
+                    y[column[i]] = Clamp(i == 0 ? wanted[i] : Math.Max(wanted[i], y[column[i - 1]] + pitch), i, column.Count);
+                for (var i = column.Count - 2; i >= 0; i--)
+                    y[column[i]] = Clamp(Math.Min(y[column[i]], y[column[i + 1]] - pitch), i, column.Count);
             }
         }
+
+        Compact(y);
 
         const double step = ItemWidth + ColumnGap;
         return numbers.Select((n, i) => (n, new Point(layer[i] * step, y[i]))).ToDictionary(x => x.n, x => x.Item2);
@@ -249,9 +264,31 @@ internal static class RoadmapNetworkLayout
     }
 
     /// <summary>
+    /// Closes the empty horizontal bands the row nudging leaves behind. A card pulled towards its
+    /// neighbours far down the figure leaves a gap above it in its column, and once every column has
+    /// a gap at the same height the band is just empty paper. Each band wider than a row gap shrinks
+    /// to one; a column's own order and spacing are kept, since a band only counts as empty when no
+    /// card in any column touches it.
+    /// </summary>
+    private static void Compact(double[] y)
+    {
+        var shift = 0.0;
+        var bottom = double.NegativeInfinity;
+        foreach (var i in Enumerable.Range(0, y.Length).OrderBy(i => y[i]).ToArray())
+        {
+            var top = y[i];
+            if (top > bottom + RowGap && !double.IsNegativeInfinity(bottom)) shift += top - bottom - RowGap;
+            bottom = Math.Max(bottom, top + ItemHeight);
+            y[i] = top - shift;
+        }
+    }
+
+    /// <summary>
     /// Each card's column: the longest chain of links leading to it. A card that only starts chains
     /// is then moved right to sit just before the nearest card it leads to, so its arrows do not
-    /// stretch across empty columns. A card linked only by <c>overlaps</c> takes its partner's column.
+    /// stretch across empty columns. A card linked only by <c>overlaps</c> goes in the column after
+    /// its partner's: in the same column the pair would be drawn as one vertical line through every
+    /// card between them.
     /// </summary>
     private static int[] Columns(int count, (int From, int To)[] links, (int A, int B)[] overlaps)
     {
@@ -281,8 +318,8 @@ internal static class RoadmapNetworkLayout
             var moved = false;
             foreach (var (a, b) in overlaps)
             {
-                if (!placed.Contains(a) && placed.Contains(b)) { layer[a] = layer[b]; placed.Add(a); moved = true; }
-                else if (!placed.Contains(b) && placed.Contains(a)) { layer[b] = layer[a]; placed.Add(b); moved = true; }
+                if (!placed.Contains(a) && placed.Contains(b)) { layer[a] = layer[b] + 1; placed.Add(a); moved = true; }
+                else if (!placed.Contains(b) && placed.Contains(a)) { layer[b] = layer[a] + 1; placed.Add(b); moved = true; }
             }
 
             if (!moved) break;
