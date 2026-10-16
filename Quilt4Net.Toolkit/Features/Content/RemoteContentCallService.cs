@@ -106,6 +106,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         // "" stays as "" (shared); value forwarded as-is.
         var effectiveApplication = ResolveApplication(application);
         var cacheKey = BuildCacheKey(key, languageKey, effectiveApplication);
+        var fallbackValue = LocalFallback(defaultValue, languageKey, translations);
 
         try
         {
@@ -161,7 +162,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                         TaskScheduler.Default);
 
                     LogResolved(key, languageKey, effectiveApplication, sw.ElapsedMilliseconds, ContentSource.Default, stale: true);
-                    return Result(defaultValue, true, ContentSource.Default, true);
+                    return Result(fallbackValue, true, ContentSource.Default, true);
                 }
             }
 
@@ -170,7 +171,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         catch (Exception e)
         {
             _localCache.TryGetValue(cacheKey, out var stale);
-            var staleValue = stale?.Value ?? defaultValue;
+            var staleValue = stale?.Value ?? fallbackValue;
             _logger.LogError(e, "{Message} Using stale cache or fallback for key {Key}.", e.Message, key);
             CacheFailure(cacheKey, staleValue);
             var source = stale is { IsDefault: false } ? ContentSource.StaleCache : ContentSource.Default;
@@ -363,7 +364,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         // Every requested key is present, resolved or not, so a caller never has to handle a miss.
         foreach (var request in requests)
         {
-            if (!string.IsNullOrEmpty(request?.Key)) result.TryAdd(request.Key, request.DefaultValue);
+            if (!string.IsNullOrEmpty(request?.Key)) result.TryAdd(request.Key, LocalFallback(request.DefaultValue, languageKey, request.Translations));
         }
 
         return result;
@@ -587,6 +588,10 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
 
     private async Task<ContentResult> FetchContentWithTimeout(string key, string cacheKey, string defaultValue, Guid languageKey, ContentFormat? contentType, Stopwatch sw, string effectiveApplication, IReadOnlyDictionary<string, string> translations = null)
     {
+        // The request still carries the default-language text: the server seeds the default language
+        // with it. Only what is shown locally, when the server does not answer, uses the fallback.
+        var localFallback = LocalFallback(defaultValue, languageKey, translations);
+
         try
         {
             var request = new GetContentRequest
@@ -642,7 +647,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                 // Toolkit issue #172. The other failure branches keep the same preference.
                 var fallbackValue = _localCache.TryGetValue(cacheKey, out var cachedOnFailure)
                     ? cachedOnFailure.Value
-                    : defaultValue;
+                    : localFallback;
 
                 // Negative-cache either way so the key isn't re-requested (and re-logged) every
                 // render — but for the content lifetime when the server answered 404, and only for
@@ -678,22 +683,24 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         {
             _logger.LogWarning("HTTP request timed out for content '{Key}' after {Timeout}ms. Using default value.",
                 key, _contentOptions.HttpTimeout.TotalMilliseconds);
-            CacheFailure(cacheKey, defaultValue);
+            CacheFailure(cacheKey, localFallback);
             LogResolved(key, languageKey, effectiveApplication, sw.ElapsedMilliseconds, ContentSource.Default, stale: true);
-            return Result(defaultValue, false, ContentSource.Default, true);
+            return Result(localFallback, false, ContentSource.Default, true);
         }
         catch (Exception e)
         {
             _logger.LogError(e, "{Message} Using default for content key {Key}.", e.Message, key);
-            CacheFailure(cacheKey, defaultValue);
+            CacheFailure(cacheKey, localFallback);
             LogResolved(key, languageKey, effectiveApplication, sw.ElapsedMilliseconds, ContentSource.Default, stale: true);
-            return Result(defaultValue, false, ContentSource.Default, true);
+            return Result(localFallback, false, ContentSource.Default, true);
         }
     }
 
     private void StartBackgroundRefresh(string key, string cacheKey, string defaultValue, Guid languageKey, ContentFormat? contentType, string effectiveApplication, IReadOnlyDictionary<string, string> translations = null)
     {
         if (!_refreshInProgress.TryAdd(cacheKey, true)) return;
+
+        var fallbackValue = LocalFallback(defaultValue, languageKey, translations);
 
         _ = Task.Run(async () =>
         {
@@ -736,7 +743,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                         _logger.LogError("Background refresh for content '{Key}' failed. Response was {StatusCode} {ReasonPhrase}.",
                             key, response.StatusCode, response.ReasonPhrase);
                     }
-                    var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : defaultValue;
+                    var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : fallbackValue;
                     if (response.StatusCode == HttpStatusCode.NotFound) CacheNotFound(cacheKey, staleValue);
                     else CacheFailure(cacheKey, staleValue, RetryAfterPolicy.Of(response));
                     return;
@@ -765,13 +772,13 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
             {
                 _logger.LogWarning("Background refresh for content '{Key}' timed out after {Timeout}ms.",
                     key, _contentOptions.HttpTimeout.TotalMilliseconds);
-                var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : defaultValue;
+                var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : fallbackValue;
                 CacheFailure(cacheKey, staleValue);
             }
             catch (Exception e)
             {
                 _logger.LogError(e, "Background refresh for content '{Key}' failed: {Message}.", key, e.Message);
-                var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : defaultValue;
+                var staleValue = _localCache.TryGetValue(cacheKey, out var s) ? s.Value : fallbackValue;
                 CacheFailure(cacheKey, staleValue);
             }
             finally
@@ -830,6 +837,39 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         if (threshold <= TimeSpan.Zero || elapsedMs < threshold.TotalMilliseconds) return;
         _logger.LogWarning("Slow {What}: {Elapsed}ms → {StatusCode} {ReasonPhrase} (threshold {Threshold}ms).",
             what, elapsedMs, statusCode, reasonPhrase, (long)threshold.TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// What to show when the server has not answered: the caller's own text for the requested language
+    /// when it supplied one, otherwise its default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A caller passes the default-language text plus, in <c>translations</c>, exact text for other
+    /// languages by name. The server serves that text once it answers, but every local fallback used to
+    /// return the default alone - so with Swedish selected and Swedish supplied, a new key rendered in
+    /// English first. That was nearly every new key: the first render waits only
+    /// <see cref="ContentOptions.MaterializationWait"/>, far less than the server takes to store a key.
+    /// </para>
+    /// <para>
+    /// Names are matched the way the server matches them, case-insensitively against the language list.
+    /// Only the list already in memory is consulted (the language selector loads it): fetching it here
+    /// would put a network call on the path that exists because the network is slow.
+    /// </para>
+    /// </remarks>
+    private string LocalFallback(string defaultValue, Guid languageKey, IReadOnlyDictionary<string, string> translations)
+    {
+        if (translations is not { Count: > 0 } || languageKey == Guid.Empty) return defaultValue;
+
+        var name = _languages?.FirstOrDefault(l => l.Key == languageKey)?.Name;
+        if (string.IsNullOrEmpty(name)) return defaultValue;
+
+        foreach (var (language, value) in translations)
+        {
+            if (string.Equals(language, name, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(value)) return value;
+        }
+
+        return defaultValue;
     }
 
     // Negative cache. IsDefault marks the entry as a fallback rather than server content, so a later
