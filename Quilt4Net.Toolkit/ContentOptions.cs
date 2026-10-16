@@ -116,6 +116,35 @@ public record ContentOptions
     public TimeSpan MaterializationWait { get; set; } = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
+    /// How long single-key content requests are collected before they go to the server together as
+    /// one call. Default 100 ms. <see cref="TimeSpan.Zero"/> sends every key on its own, as before.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A page that declares many keys the cache does not hold - new keys, typically, right after a
+    /// release - used to send one request per key, all at once, and each made the server do its own
+    /// database reads and writes. A burst of those from one page was enough to queue every other
+    /// caller behind it. Batched, the page costs one request, and the server shares the reads.
+    /// </para>
+    /// <para>
+    /// The components on a page ask for their keys within milliseconds of each other, so a short
+    /// window catches the whole page. A longer one catches nothing more and only delays an existing key
+    /// whose cache is cold. The first render does not wait for it in any case: see
+    /// <see cref="MaterializationWait"/>.
+    /// </para>
+    /// <para>
+    /// A key alone in its window is sent as a single request, and a server too old to accept batches
+    /// is detected on the first one and asked key by key from then on.
+    /// </para>
+    /// </remarks>
+    public TimeSpan BatchWindow { get; set; } = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// The most keys sent in one batch; a batch that fills up goes at once. Default 100.
+    /// </summary>
+    public int BatchMaxSize { get; set; } = 100;
+
+    /// <summary>
     /// Cache lifetime to request from the server. When <c>null</c> (the default) the server's own
     /// configured lifetime applies, as before.
     /// </summary>
