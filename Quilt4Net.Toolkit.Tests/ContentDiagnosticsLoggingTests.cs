@@ -84,6 +84,9 @@ public class ContentDiagnosticsLoggingTests
                 {
                     o.Quilt4NetAddress = baseAddress;
                     o.ApiKey = "test-key";
+                    // Wait for the server's answer: these tests read what the round trip did, and the
+                    // batch window plus the server delay can outlast the default wait.
+                    o.MaterializationWait = TimeSpan.Zero;
                     configure(o);
                 });
                 services.AddLogging(b =>
@@ -113,6 +116,15 @@ public class ContentDiagnosticsLoggingTests
                 HttpListenerContext ctx;
                 try { ctx = await listener.GetContextAsync(); }
                 catch { return; }
+
+                // A server from before batching answers the batch call 404, and the client then asks key
+                // by key - what these tests were written against.
+                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url!.AbsolutePath.EndsWith("/batch", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.StatusCode = 404;
+                    ctx.Response.Close();
+                    continue;
+                }
 
                 if (delay > TimeSpan.Zero) await Task.Delay(delay);
                 ctx.Response.StatusCode = (int)status;
