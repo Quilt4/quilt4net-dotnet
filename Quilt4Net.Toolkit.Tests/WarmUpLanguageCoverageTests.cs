@@ -86,6 +86,15 @@ public class WarmUpLanguageCoverageTests
                 try { ctx = await listener.GetContextAsync(); }
                 catch { return; }
 
+                // A server from before batching answers the batch call 404, and the client then asks key
+                // by key - what these tests were written against.
+                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url!.AbsolutePath.EndsWith("/batch", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.StatusCode = 404;
+                    ctx.Response.Close();
+                    continue;
+                }
+
                 // Api/Content/all/{application}/{environment}/{languageKey}
                 var segments = ctx.Request.Url?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
                 if (segments.Length > 0 && Guid.TryParse(segments[^1], out var languageKey)) warmed.Add(languageKey);

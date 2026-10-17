@@ -117,6 +117,15 @@ public class ContentDiagnosticsLoggingTests
                 try { ctx = await listener.GetContextAsync(); }
                 catch { return; }
 
+                // A server from before batching answers the batch call 404, and the client then asks key
+                // by key - what these tests were written against.
+                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url!.AbsolutePath.EndsWith("/batch", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.StatusCode = 404;
+                    ctx.Response.Close();
+                    continue;
+                }
+
                 if (delay > TimeSpan.Zero) await Task.Delay(delay);
                 ctx.Response.StatusCode = (int)status;
                 ctx.Response.Close();

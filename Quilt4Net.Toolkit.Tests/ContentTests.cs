@@ -106,6 +106,15 @@ public class ContentTests
                 try { ctx = await listener.GetContextAsync(); }
                 catch { return; }
 
+                // A server from before batching answers the batch call 404, and the client then asks key
+                // by key - what these tests were written against.
+                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url!.AbsolutePath.EndsWith("/batch", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.StatusCode = 404;
+                    ctx.Response.Close();
+                    continue;
+                }
+
                 // URL is /Api/Content/{base64(GetContentRequest)} — decode to capture the Application field.
                 var segments = ctx.Request.Url!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                 if (segments.Length >= 3 && string.Equals(segments[0], "Api", StringComparison.OrdinalIgnoreCase)
