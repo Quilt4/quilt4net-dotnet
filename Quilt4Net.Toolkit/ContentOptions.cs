@@ -99,13 +99,15 @@ public record ContentOptions
     /// <para>
     /// The caller already holds the correct text — <c>defaultValue</c> and <c>translations</c> are
     /// literals in its own source — so waiting for the server to write down an answer it was just
-    /// given buys nothing.
+    /// given buys nothing. What it shows meanwhile is the text it supplied for the selected language
+    /// when there is one (matched by name, as the server matches it), and <c>defaultValue</c> otherwise.
     /// </para>
     /// <para>
     /// ⚠️ <b>The trade.</b> This applies to any key not in the cache, not only to genuinely new
     /// ones, because the client cannot tell the two apart until the server answers. For an existing
-    /// key whose cache is cold, a slow server therefore means one render of the code default before
-    /// the stored value arrives — briefly the wrong language, where previously the render blocked.
+    /// key whose cache is cold, a slow server therefore means one render of the code's own text before
+    /// the stored value arrives — briefly the code's wording rather than the edited one, and the default
+    /// language when the code supplies no text for the selected one, where previously the render blocked.
     /// In practice the warm-up has already loaded every existing key, so the cold case is close to
     /// exclusively new keys. Set this to <see cref="TimeSpan.Zero"/> if a correct first paint
     /// matters more than a responsive one.
