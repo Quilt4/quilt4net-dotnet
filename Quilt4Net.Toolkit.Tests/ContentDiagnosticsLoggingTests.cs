@@ -84,6 +84,9 @@ public class ContentDiagnosticsLoggingTests
                 {
                     o.Quilt4NetAddress = baseAddress;
                     o.ApiKey = "test-key";
+                    // Wait for the server's answer: these tests read what the round trip did, and the
+                    // batch window plus the server delay can outlast the default wait.
+                    o.MaterializationWait = TimeSpan.Zero;
                     configure(o);
                 });
                 services.AddLogging(b =>
