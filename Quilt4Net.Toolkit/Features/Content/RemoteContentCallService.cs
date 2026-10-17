@@ -41,6 +41,8 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
     private Language[] _languages;
     private DateTime _languagesValidTo;
     private TimeSpan _lastKnownLanguageTtl;
+    private readonly RequestBatcher<GetContentRequest, HttpResponseMessage> _batcher;
+    private int _batchUnsupported;
 
     /// <summary>Named <see cref="IHttpClientFactory"/> client for content calls to Quilt4Net.Server.</summary>
     public const string HttpClientName = "Quilt4Net.Content";
@@ -61,6 +63,8 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
             "How long a content resolution took, tagged by where the value came from.");
         _meter.CreateObservableGauge(Quilt4NetMetrics.ContentBackoffKeys, () => _failureBackoff.ActiveCount, "{key}",
             "Content keys currently held off by the failure back-off.");
+
+        _batcher = new RequestBatcher<GetContentRequest, HttpResponseMessage>(SendBatchAsync, _contentOptions.BatchWindow, Math.Max(1, _contentOptions.BatchMaxSize));
     }
 
     public void Dispose() => _meter.Dispose();
@@ -606,12 +610,8 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                 Translations = translations,
                 Ttl = _contentOptions.CacheDuration
             };
-            var complexKey = BuildKey(request);
-
             using var cts = new CancellationTokenSource(_contentOptions.HttpTimeout);
-            using var client = GetHttpClient();
-            var address = $"Api/Content/{complexKey}";
-            var response = await client.GetAsync(address, cts.Token);
+            var response = await SendContentRequestAsync(request, cts.Token);
 
             WarnIfSlow(sw.ElapsedMilliseconds, $"content load for '{key}' (language {languageKey})", (int)response.StatusCode, response.ReasonPhrase);
 
@@ -718,12 +718,8 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                     Translations = translations,
                     Ttl = _contentOptions.CacheDuration
                 };
-                var complexKey = BuildKey(request);
-
                 using var cts = new CancellationTokenSource(_contentOptions.HttpTimeout);
-                using var client = GetHttpClient();
-                var address = $"Api/Content/{complexKey}";
-                var response = await client.GetAsync(address, cts.Token);
+                var response = await SendContentRequestAsync(request, cts.Token);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -960,6 +956,76 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         var base64 = Convert.ToBase64String(bytes);
         var payload = WebUtility.UrlEncode(base64);
         return payload;
+    }
+
+    /// <summary>
+    /// Sends one key's request, batched with others made at about the same time unless batching is
+    /// off or the server cannot take batches. The answer has the shape a single-key call would have
+    /// had, so every caller handles it exactly as before.
+    /// </summary>
+    private Task<HttpResponseMessage> SendContentRequestAsync(GetContentRequest request, CancellationToken cancellationToken)
+    {
+        if (_contentOptions.BatchWindow <= TimeSpan.Zero || Volatile.Read(ref _batchUnsupported) == 1)
+            return GetSingleAsync(request, cancellationToken);
+
+        return _batcher.EnqueueAsync(request).WaitAsync(cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> GetSingleAsync(GetContentRequest request, CancellationToken cancellationToken)
+    {
+        using var client = GetHttpClient();
+        return await client.GetAsync($"Api/Content/{BuildKey(request)}", cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<HttpResponseMessage>> SendBatchAsync(IReadOnlyList<GetContentRequest> requests)
+    {
+        using var cts = new CancellationTokenSource(_contentOptions.HttpTimeout);
+
+        // A key alone in its window gains nothing from a batch, and the single-key call works against
+        // every server version.
+        if (requests.Count == 1) return [await GetSingleAsync(requests[0], cts.Token)];
+
+        HttpResponseMessage response;
+        using (var client = GetHttpClient())
+        {
+            response = await client.PostAsJsonAsync("Api/Content/batch", new GetContentBatchRequest { Items = requests.ToArray() }, cts.Token);
+        }
+
+        using (response)
+        {
+            // The endpoint never answers 404 or 405 itself, so either means a server from before
+            // batching. Remembered for the life of the process: asking again would cost every page a
+            // wasted call.
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+            {
+                if (Interlocked.Exchange(ref _batchUnsupported, 1) == 0)
+                    _logger.LogInformation("The content server does not accept batched requests ({StatusCode}); asking key by key.", (int)response.StatusCode);
+
+                return await Task.WhenAll(requests.Select(async r =>
+                {
+                    using var single = new CancellationTokenSource(_contentOptions.HttpTimeout);
+                    return await GetSingleAsync(r, single.Token);
+                }));
+            }
+
+            // A failed batch fails each key the way its own call would have failed - same status,
+            // same Retry-After - so back-off and logging stay per key.
+            if (!response.IsSuccessStatusCode)
+            {
+                return requests.Select(_ =>
+                {
+                    var failed = new HttpResponseMessage(response.StatusCode) { ReasonPhrase = response.ReasonPhrase };
+                    failed.Headers.RetryAfter = response.Headers.RetryAfter;
+                    return failed;
+                }).ToArray();
+            }
+
+            var batch = await response.Content.ReadFromJsonAsync<GetContentBatchResponse>(cancellationToken: cts.Token);
+            if (batch?.Items == null || batch.Items.Length != requests.Count)
+                throw new InvalidOperationException($"The content server answered a batch of {requests.Count} keys with {batch?.Items?.Length ?? 0} values.");
+
+            return batch.Items.Select(item => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(item) }).ToArray();
+        }
     }
 
     // Factory-created named client: BaseAddress + X-API-KEY are configured once at registration,
