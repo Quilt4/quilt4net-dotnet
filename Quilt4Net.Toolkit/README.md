@@ -481,6 +481,38 @@ Bound from `Quilt4Net:Notification`, falling back to `Quilt4Net:ApiKey` and `Qui
 | `Application` | entry assembly name | Application sent with each notification. |
 | `Environment` | host environment name | Environment sent with each notification. |
 
+## Heartbeat reporting
+
+Tell Quilt4Net that this instance is alive and what it can do. A rule on Quilt4Net names a
+**capability** and raises a notification when no instance with it has reported in time — and another
+when it comes back. Run several machines with different capabilities, and you are alerted when the last
+one that can, say, `import` goes quiet.
+
+```csharp
+builder.AddQuilt4NetHeartbeatReporting(o => o.Capabilities = ["import", "export"]);
+```
+
+A report is sent at start and then every `Interval`. A failed report is logged and retried on the next
+interval, never thrown — the application keeps running when Quilt4Net cannot be reached, and the missed
+heartbeat is what the rule is there to notice.
+
+This is not the Application Insights heartbeat in `Quilt4Net.Toolkit.Health` (`Quilt4Net:HealthApi:Heartbeat`),
+which sends availability telemetry.
+
+### HeartbeatReportingOptions
+
+Bound from `Quilt4Net:HeartbeatReporting`, falling back to `Quilt4Net:ApiKey` and `Quilt4Net:Quilt4NetAddress`.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `Quilt4NetAddress` | `https://quilt4net.com/` | Address of the Quilt4Net server. |
+| `ApiKey` | | Team API key. Needs `heartbeat:write`, which an ordinary application key has. |
+| `Capabilities` | none | What this instance can do. Matched without case. |
+| `Interval` | 5 minutes | How often to report. Make a rule's silence window a few intervals long. |
+| `Application` | entry assembly name | Application to report. |
+| `Environment` | host environment name | Environment to report. |
+| `Instance` | machine name | Tells two copies of the application apart. |
+
 ## Health check client
 
 Client for consuming health endpoints from a remote service that uses Quilt4Net Health API.
