@@ -99,6 +99,7 @@ All packages read from `appsettings.json` under the `Quilt4Net` section. The sha
 | `Quilt4Net:Content` | Toolkit / Blazor | Content management options (application name, server address, `WarmUpEnabled` bulk cache warm-up and its periodic re-warm, failure back-off). |
 | `Quilt4Net:ApplicationInsights` | Toolkit | Application Insights client options (tenant, workspace, credentials). |
 | `Quilt4Net:HealthClient` | Toolkit | Health client options (remote health API address). |
+| `Quilt4Net:Notification` | Toolkit | Notification client options (server address, API key with `notification:write`, application, environment). |
 
 See individual package READMEs for full option details.
 

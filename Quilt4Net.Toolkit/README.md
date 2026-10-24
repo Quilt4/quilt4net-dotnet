@@ -446,6 +446,41 @@ Or the MCP tool `quilt4net.release_note.publish`, for a release step driven by a
 version again replaces its body, so a rerun or a fixed typo leaves one note rather than two, and a
 version that is not strict SemVer is refused there and then — ordering is what the delta is built on.
 
+## Notifications
+
+Send a notification to your team on Quilt4Net, where subscribers such as the Quilt4Net app pick it up.
+A notification has a **category** and a **message**. The receiver decides from the category how to
+alert — an alarm for `alarm`, a quiet notification for `info` — so agree on the categories in your team.
+
+```csharp
+builder.AddQuilt4NetNotifications();
+```
+
+```csharp
+public class Worker(INotificationClient notifications)
+{
+    public Task ReportAsync() => notifications.SendAsync("alarm", "The import queue has stopped moving.");
+}
+```
+
+The application, environment and machine name are sent along. Set them yourself on a
+`SendNotificationRequest`, or in the options; otherwise the entry assembly's name, the host
+environment's name and `Environment.MachineName` are used.
+
+A failed send throws `NotificationClientException` with the status code. It is never dropped quietly:
+a sender that believes it raised an alarm when it did not is the worst outcome.
+
+### NotificationOptions
+
+Bound from `Quilt4Net:Notification`, falling back to `Quilt4Net:ApiKey` and `Quilt4Net:Quilt4NetAddress`.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `Quilt4NetAddress` | `https://quilt4net.com/` | Address of the Quilt4Net server. |
+| `ApiKey` | | Team API key. Needs the `notification:write` scope, which is chosen when the key is minted; ordinary application keys do not have it. |
+| `Application` | entry assembly name | Application sent with each notification. |
+| `Environment` | host environment name | Environment sent with each notification. |
+
 ## Health check client
 
 Client for consuming health endpoints from a remote service that uses Quilt4Net Health API.
