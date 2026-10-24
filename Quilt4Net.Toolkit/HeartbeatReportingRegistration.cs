@@ -47,6 +47,9 @@ public static class HeartbeatReportingRegistration
 
         services.AddSingleton(Options.Create(o));
 
+        // Switched off: the options stay readable, but nothing reports and no HTTP client is set up.
+        if (!o.Enabled) return;
+
         services.AddQuilt4NetCorrelationId();
         services.AddHttpClient(HeartbeatReporter.HttpClientName, client =>
             {

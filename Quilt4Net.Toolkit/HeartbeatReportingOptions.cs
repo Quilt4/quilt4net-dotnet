@@ -12,6 +12,13 @@ namespace Quilt4Net.Toolkit;
 public record HeartbeatReportingOptions
 {
     /// <summary>
+    /// Whether to report at all. Default is true. Set false in configuration to keep the registration
+    /// in code but stop reporting on a machine or in an environment, such as a developer's laptop that
+    /// would otherwise count as a live instance.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
     /// Address of the Quilt4Net server. Defaulted on the type so an unbound
     /// <c>IOptions&lt;HeartbeatReportingOptions&gt;</c> still carries a usable URL.
     /// </summary>

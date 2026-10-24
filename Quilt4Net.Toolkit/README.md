@@ -505,6 +505,7 @@ Bound from `Quilt4Net:HeartbeatReporting`, falling back to `Quilt4Net:ApiKey` an
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `Enabled` | `true` | Set `false` to stop reporting on a machine or in an environment, such as a developer's laptop, without changing code. |
 | `Quilt4NetAddress` | `https://quilt4net.com/` | Address of the Quilt4Net server. |
 | `ApiKey` | | Team API key. Needs `heartbeat:write`, which an ordinary application key has. |
 | `Capabilities` | none | What this instance can do. Matched without case. |
