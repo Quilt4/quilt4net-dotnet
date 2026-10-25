@@ -82,35 +82,10 @@ internal class IssueService : IIssueService
     private static async Task<IssueServiceException> BuildExceptionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : ProblemDetail(body) ?? body.Trim();
+        var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : ProblemResponse.DetailOf(body) ?? body.Trim();
         return new IssueServiceException(
             $"Quilt4Net issue request failed with {(int)response.StatusCode}: {detail}",
             (int)response.StatusCode,
             RetryAfterPolicy.Of(response));
-    }
-
-    /// <summary>
-    /// The sentence a problem response carries in <c>detail</c> (else <c>title</c>), so the message says
-    /// what the server said - which scope is missing, or that the team has switched the feature off -
-    /// rather than repeating the JSON around it. Null when the body is not a problem object.
-    /// </summary>
-    private static string ProblemDetail(string body)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
-            foreach (var name in new[] { "detail", "title" })
-            {
-                if (document.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString()))
-                    return value.GetString().Trim();
-            }
-
-            return null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

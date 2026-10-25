@@ -421,7 +421,9 @@ and comparison the server uses.
 | `GetAsync(version, application)` | One version's note, or `null` when it has none. |
 
 Release notes are decoration, so every failure degrades quietly — a page that cannot show its news
-still renders.
+still renders. A **403** is logged as a warning with the server's own sentence: either the key lacks
+`release:read`, or the team has switched its **Documentation** feature off, which is a choice rather
+than a fault. Any other failure is logged as an error.
 
 ### Minting a key
 
