@@ -6,7 +6,8 @@ namespace Quilt4Net.Toolkit.Features.Issue;
 /// <remarks>
 /// Every call is scoped to the team owning the configured API key — there is no team argument,
 /// because a team key cannot reach another team's issues. Reads need <c>issue:read</c>; writes need
-/// <c>issue:write</c>, which is not granted by access level and must be added to the key explicitly.
+/// <c>issue:write</c>, and replacing the workflow needs <c>issue:manage</c>. Both come with an
+/// Administrator key, or with the Issue Manager role.
 /// <para>
 /// Unlike <see cref="FeatureToggle.IRemoteConfigurationService"/>, these calls do not cache and do
 /// not fall back to a default on failure: a tracker read that silently returned stale or empty data
