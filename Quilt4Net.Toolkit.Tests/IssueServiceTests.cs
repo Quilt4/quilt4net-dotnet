@@ -148,6 +148,21 @@ public class IssueServiceTests
         thrown.Which.Message.Should().Contain("issue:write");
     }
 
+    [Theory]
+    [InlineData("""{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.4","title":"Forbidden","status":403,"detail":"'issue:read' belongs to Issues, which is switched off for this team."}""", "'issue:read' belongs to Issues, which is switched off for this team.")]
+    [InlineData("""{"title":"Forbidden","status":403}""", "Forbidden")]
+    [InlineData("""["not a problem"]""", """["not a problem"]""")]
+    [InlineData("Missing required scope 'issue:write'.", "Missing required scope 'issue:write'.")]
+    public async Task A_problem_response_is_reported_by_its_detail(string body, string expected)
+    {
+        var sut = CreateSut(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent(body) }));
+
+        var act = () => sut.GetRoadmapAsync();
+
+        var thrown = await act.Should().ThrowAsync<IssueServiceException>();
+        thrown.Which.Message.Should().Be($"Quilt4Net issue request failed with 403: {expected}");
+    }
+
     [Fact]
     public async Task A_429_carries_the_servers_retry_after()
     {

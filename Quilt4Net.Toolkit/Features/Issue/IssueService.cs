@@ -82,7 +82,7 @@ internal class IssueService : IIssueService
     private static async Task<IssueServiceException> BuildExceptionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body.Trim();
+        var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : ProblemResponse.DetailOf(body) ?? body.Trim();
         return new IssueServiceException(
             $"Quilt4Net issue request failed with {(int)response.StatusCode}: {detail}",
             (int)response.StatusCode,

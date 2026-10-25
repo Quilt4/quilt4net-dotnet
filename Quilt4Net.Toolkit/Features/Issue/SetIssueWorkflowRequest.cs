@@ -1,7 +1,7 @@
 namespace Quilt4Net.Toolkit.Features.Issue;
 
 /// <summary>
-/// Replaces a team's issue workflow. Requires an API key carrying the <c>issue:write</c> scope.
+/// Replaces a team's issue workflow. Requires an API key carrying the <c>issue:manage</c> scope.
 /// </summary>
 /// <remarks>
 /// The replacement is validated before anything is written: exactly one state must be initial, every

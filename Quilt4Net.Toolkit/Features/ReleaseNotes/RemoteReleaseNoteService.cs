@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Quilt4Net.Toolkit.Framework;
 
 namespace Quilt4Net.Toolkit.Features.ReleaseNotes;
 
@@ -82,6 +83,16 @@ internal sealed class RemoteReleaseNoteService : IReleaseNoteService
             var response = await client.GetAsync(route, cts.Token);
 
             if (response.StatusCode == HttpStatusCode.NotFound) return null;
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                // The key lacks release:read, or the team has switched Documentation off - a choice,
+                // not a fault, so a warning rather than an error on every page that asks. The server's
+                // sentence says which.
+                var detail = ProblemResponse.DetailOf(await response.Content.ReadAsStringAsync(cts.Token)) ?? response.ReasonPhrase;
+                _logger?.LogWarning("No {What}: {Detail}", what, detail);
+                return null;
+            }
 
             if (!response.IsSuccessStatusCode)
             {

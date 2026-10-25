@@ -421,7 +421,9 @@ and comparison the server uses.
 | `GetAsync(version, application)` | One version's note, or `null` when it has none. |
 
 Release notes are decoration, so every failure degrades quietly — a page that cannot show its news
-still renders.
+still renders. A **403** is logged as a warning with the server's own sentence: either the key lacks
+`release:read`, or the team has switched its **Documentation** feature off, which is a choice rather
+than a fault. Any other failure is logged as an error.
 
 ### Minting a key
 
@@ -851,20 +853,22 @@ nobody holds the issue, which is also how every issue reads against a server tha
 | Property | Default | Description |
 |----------|---------|-------------|
 | `Quilt4NetAddress` | `https://quilt4net.com/` | Server base URL. |
-| `ApiKey` | — *(required)* | Team API key. Reading needs `issue:read`; writing needs `issue:write`. |
+| `ApiKey` | — *(required)* | Team API key. Reading needs `issue:read`; writing needs `issue:write`; replacing the workflow needs `issue:manage`. |
 
 Configuration path: `Quilt4Net:Issue` (or top-level `Quilt4Net:ApiKey` + `Quilt4Net:Quilt4NetAddress` for shared keys).
 
 ### Behaviour and contract
 
-- **Calls throw rather than degrade.** Unlike `IRemoteConfigurationService`, which serves a fallback when the server is unreachable, a tracker read that quietly returned an empty set would be indistinguishable from a team with no issues. Failures surface as `IssueServiceException` carrying the status code.
+- **Calls throw rather than degrade.** Unlike `IRemoteConfigurationService`, which serves a fallback when the server is unreachable, a tracker read that quietly returned an empty set would be indistinguishable from a team with no issues. Failures surface as `IssueServiceException` carrying the status code, and its message is the server's own explanation (the problem response's `detail`).
+- **A 403 says which of two things it is.** The key lacks a scope, and the message names the scope; or the team has switched the Issues feature off, and the message names the feature. Only the team's owner or an administrator can switch it back on. `IssueRoadmap` shows that message in place of the roadmap.
+- **A 409 means the issue kept changing while it was written**, by other writers at the same moment. Read it again and retry.
 - **A 429 carries the server's `Retry-After`** on `IssueServiceException.RetryAfter`. Honour it; do not retry immediately.
 - **`UpdateAsync` replaces, it does not merge.** Read the issue, change what you mean to change, and send the whole thing back. An omitted optional field is cleared.
 - **Enums travel as names**, not numbers, so inserting a member never re-grades values already in flight.
 
 ### Minting a key
 
-In the Quilt4Net.Server admin UI under **Api → Api Key**. `issue:read` comes with any key at Viewer level or above. **`issue:write` is not granted by access level** and must be added to the key explicitly as a scope override — otherwise every application key that already holds `content:write` would be able to edit the tracker. For MCP access the key also needs `mcp:discover`.
+In the Quilt4Net.Server admin UI under **Api → Api Key**. `issue:read` comes with any key at Viewer level or above. **`issue:write` and `issue:manage` come only at Administrator level**, or with the **Issue Manager** role, so an application key that holds `content:write` cannot edit the tracker. For MCP access the key also needs `mcp:discover`.
 
 ## What every call sends
 
