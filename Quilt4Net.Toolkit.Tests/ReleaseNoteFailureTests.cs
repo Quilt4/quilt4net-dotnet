@@ -21,8 +21,8 @@ public class ReleaseNoteFailureTests
     {
         var (sut, log) = Create(HttpStatusCode.Forbidden, SwitchedOff);
 
-        var delta = await sut.GetDeltaAsync("1.0.0");
-        var note = await sut.GetAsync("1.0.0");
+        var delta = await sut.GetDeltaAsync("1.0.0", cancellationToken: TestContext.Current.CancellationToken);
+        var note = await sut.GetAsync("1.0.0", cancellationToken: TestContext.Current.CancellationToken);
 
         delta.Should().BeSameAs(ReleaseNoteDeltaDto.Empty);
         note.Should().BeNull();
@@ -35,7 +35,7 @@ public class ReleaseNoteFailureTests
     {
         var (sut, log) = Create(HttpStatusCode.InternalServerError, "boom");
 
-        var delta = await sut.GetDeltaAsync("1.0.0");
+        var delta = await sut.GetDeltaAsync("1.0.0", cancellationToken: TestContext.Current.CancellationToken);
 
         delta.Should().BeSameAs(ReleaseNoteDeltaDto.Empty);
         log.Should().Contain(x => x.Level == LogLevel.Error);
