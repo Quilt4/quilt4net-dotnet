@@ -334,10 +334,11 @@ to be read together:
   directions — the server saying when it will be ready beats any client-side guess. This now covers
   content, **remote configuration** and the **bulk warm-up**; a shed call is logged at `Warning` as
   backpressure rather than at `Error` as a fault.
-- **A `403` serves the fallback and says why.** The key lacks `config:read`, or the team has switched
-  its Remote configuration off on the server. Every read then serves its fallback - which is what
-  switching it off means - and the refusal is logged at `Warning` with the server's own sentence, not
-  at `Error` on every read.
+- **A `403` serves the fallback and says why.** The key lacks the read scope (`config:read`,
+  `content:read`, `language:read`), or the team has switched that feature - Remote configuration or
+  Content - off on the server. Every read then serves its default, which is what switching it off
+  means, and the refusal is logged at `Warning` with the server's own sentence, not at `Error`. For
+  content it is logged at most every five minutes, since a page asks for many keys at once.
 - **A rate-limited warm-up waits rather than falling back.** Dropping to per-key fetching would turn
   one shed call into hundreds — the exact burst the server shed it to avoid — so a `429` carrying a
   short `Retry-After` (up to 30 s) is waited out and retried once. A longer one is left to the next
