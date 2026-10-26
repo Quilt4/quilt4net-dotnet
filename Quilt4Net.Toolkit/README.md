@@ -559,7 +559,7 @@ Client for querying Application Insights data (logs, metrics, exceptions). The t
 builder.AddQuilt4NetApplicationInsightsClient();
 ```
 
-**Remote mode** — credentials fetched from Quilt4Net.Server at runtime using an API key with the `monitor:read` scope. Consumers no longer need to keep `TenantId` / `WorkspaceId` / `ClientId` / `ClientSecret` in their own configuration:
+**Remote mode** — credentials fetched from Quilt4Net.Server at runtime using an API key with the `logging:read` scope (formerly `monitor:read`; a 403 is logged as a warning and returns no configurations). Consumers no longer need to keep `TenantId` / `WorkspaceId` / `ClientId` / `ClientSecret` in their own configuration:
 ```csharp
 builder.AddQuilt4NetApplicationInsightsClientRemote();
 ```
@@ -568,7 +568,7 @@ builder.AddQuilt4NetApplicationInsightsClientRemote();
   "Quilt4Net": {
     "RemoteConfiguration": {
       "Quilt4NetAddress": "https://quilt4net.com/",
-      "ApiKey": "<monitor:read API key>"
+      "ApiKey": "<logging:read API key>"
     }
   }
 }

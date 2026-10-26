@@ -60,6 +60,15 @@ internal class RemoteApplicationInsightsConfigurationProvider : IApplicationInsi
             using var client = CreateHttpClient();
 
             var response = await client.GetAsync("Api/Monitoring/ApplicationInsights", linkedCts.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // The key lacks logging:read (it was monitor:read), or the team has switched Logging off on
+                // the server - a choice, so a warning with the server's own sentence rather than an error.
+                var detail = ProblemResponse.DetailOf(await response.Content.ReadAsStringAsync(linkedCts.Token)) ?? response.ReasonPhrase;
+                _logger.LogWarning("No Application Insights configurations: {Detail}", detail);
+                return cached ?? [];
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError(
