@@ -1,8 +1,8 @@
 namespace Quilt4Net.Toolkit.Features.Issue;
 
 /// <summary>
-/// One phase an issue can be in within a non-terminal state — <c>Doing · Testing</c>,
-/// <c>Doing · Ready to deploy</c>. Declared by the team's workflow, per state.
+/// One phase an issue can be in within a non-terminal state — <c>Doing · In Progress</c>,
+/// <c>Doing · To Deploy</c>. Declared by the team's workflow, per state.
 /// </summary>
 /// <remarks>
 /// <para>

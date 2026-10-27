@@ -833,14 +833,14 @@ tracker's own term (GitHub's `not_planned`, Jira's `Won't Fix`) without a Toolki
 
 #### Which phase it is in
 
-Any non-terminal state may declare **sub-states**: the seed gives `Doing` the phases `Planning`,
-`Coding`, `In review`, `Testing`, `Ready to deploy` and `Verifying`. They are declared per state as
+Any non-terminal state may declare **sub-states**: the seed gives `Doing` the phases `In Progress`
+and `To Deploy`. They are declared per state as
 `IssueWorkflowStateResponse.SubStates`, and an issue carries its own as `IssueResponse.SubState`, with
 `SubStateSinceUtc` saying how long it has been there.
 
 ```csharp
 // Within the state the issue is already in: no transition, only the phase changes.
-await issueService.SetStateAsync(87, new SetIssueStateRequest { State = "Doing", SubState = "Testing" });
+await issueService.SetStateAsync(87, new SetIssueStateRequest { State = "Doing", SubState = "To Deploy" });
 ```
 
 A sub-state is **always optional** — an issue may hold none — and changing it needs no edge in the
