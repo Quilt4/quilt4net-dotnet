@@ -974,6 +974,16 @@ public class IssueRoadmapTests : BunitContext
         Closed = closed ?? []
     };
 
+    [Fact]
+    public void A_card_shows_its_place_in_the_order_when_the_server_sends_one()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1) with { Position = 7 }, Item(2)]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.FindAll("[data-position]").Should().ContainSingle().Which.TextContent.Trim().Should().Be("7");
+    }
+
     private static RoadmapItemResponse Item(int number, bool terminal = false, bool quickWin = false, string assignedUserKey = null, string assignedUserName = null,
         string state = "Todo", RoadmapStateKind kind = RoadmapStateKind.NotStarted, string resolution = null, bool? resolutionIsSuccess = null,
         IssueClaimResponse claim = null, RoadmapBand? band = null, IssueImportance? importance = IssueImportance.Important, IssueEffort? effort = IssueEffort.S,

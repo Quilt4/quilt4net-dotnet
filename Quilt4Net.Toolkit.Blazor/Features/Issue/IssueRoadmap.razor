@@ -135,7 +135,17 @@
                             <circle cx="@N(placed.Right - 14)" cy="@N(placed.Y + 14)"
                                     r="5" fill="none" stroke="var(--rz-text-color)" stroke-width="2"/>
                         }
-                        <text x="@N(placed.X + 12)" y="@N(placed.Y + 20)" font-size="12" font-weight="700"
+                        @* The issue's place in the team's one order, before its number, as on the board. *@
+                        @if (item.Position is { } position)
+                        {
+                            <g data-position>
+                                <rect x="@N(placed.X + 10)" y="@N(placed.Y + 8)" width="@N(PositionWidth(position))" height="16"
+                                      rx="8" fill="rgba(128,128,128,0.18)"/>
+                                <text x="@N(placed.X + 10 + PositionWidth(position) / 2)" y="@N(placed.Y + 20)" font-size="11"
+                                      text-anchor="middle" fill="var(--rz-text-color)">@position</text>
+                            </g>
+                        }
+                        <text x="@N(placed.X + 12 + (item.Position is { } p ? PositionWidth(p) + 4 : 0))" y="@N(placed.Y + 20)" font-size="12" font-weight="700"
                               fill="var(--rz-text-secondary-color)">#@item.Number</text>
                         <text x="@N(placed.X + 12)" y="@N(placed.Y + 38)" font-size="13"
                               fill="var(--rz-text-color)">@Truncate(item.Title, TitleLength(placed))</text>
@@ -270,6 +280,9 @@
 </ConnectionWrapper>
 
 @code {
+    /// <summary>The position pill's width: room for its digits.</summary>
+    private static double PositionWidth(int position) => 10 + 7 * position.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+
     private readonly string _id = $"q4n-roadmap-{Guid.NewGuid():N}";
     private RoadmapFigure _figure;
     private RoadmapResponse _roadmap;
@@ -686,6 +699,7 @@
     {
         var item = placed.Item;
         var parts = new List<string> { $"#{item.Number} {item.Title}", item.State };
+        if (item.Position is { } position) parts.Add($"position {position} in the order");
         if (!string.IsNullOrEmpty(placed.Route)) parts.Add(placed.Route);
         if (item.Effort.HasValue) parts.Add(item.Effort.Value.ToString());
 

@@ -162,6 +162,14 @@ public record RoadmapItemResponse
     /// </summary>
     public IssueImportance? Importance { get; init; }
 
+    /// <summary>
+    /// Where the issue stands in the team's one automatic order over every open issue, 1 being the
+    /// one to pick up first: blockers before what they block, then band, importance and effort. The
+    /// same number the issue list and the board show. <c>null</c> for a finished issue, and from a
+    /// server that predates the field.
+    /// </summary>
+    public int? Position { get; init; }
+
     /// <summary>Rough size, rendered on the item as <c>· S</c>, <c>· M</c> or <c>· L</c>.</summary>
     public required IssueEffort? Effort { get; init; }
 
