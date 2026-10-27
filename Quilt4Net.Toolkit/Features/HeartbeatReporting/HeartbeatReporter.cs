@@ -33,6 +33,9 @@ internal class HeartbeatReporter : BackgroundService
         _logger = logger;
     }
 
+    private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromHours(1);
+    private DateTime _forbiddenLoggedAt = DateTime.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -52,6 +55,19 @@ internal class HeartbeatReporter : BackgroundService
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.PostAsJsonAsync(Root, BuildReport(), cancellationToken);
             if (response.IsSuccessStatusCode) return true;
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // The key lacks heartbeat:write, or the team has switched Monitoring off on the server - a
+                // choice that refuses every heartbeat, so said once an hour with the server's sentence.
+                if (DateTime.UtcNow - _forbiddenLoggedAt >= ForbiddenLogInterval)
+                {
+                    _forbiddenLoggedAt = DateTime.UtcNow;
+                    var detail = Framework.ProblemResponse.DetailOf(await response.Content.ReadAsStringAsync(cancellationToken)) ?? response.ReasonPhrase;
+                    _logger.LogWarning("Quilt4Net refused heartbeats (403): {Detail} Logged at most once an hour.", detail);
+                }
+                return false;
+            }
 
             _logger.LogWarning("Quilt4Net refused a heartbeat with {StatusCode}.", (int)response.StatusCode);
             return false;
