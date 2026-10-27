@@ -2,7 +2,19 @@
 [![GitHub repo Issues](https://img.shields.io/github/issues/Quilt4/Quilt4Net.Toolkit?style=flat&logo=github&logoColor=red&label=Issues)](https://github.com/Quilt4/Quilt4Net.Toolkit/issues?q=is%3Aopen)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A set of NuGet packages for building .NET applications with health checks, metrics, remote configuration, feature toggles, content management, API logging, and Application Insights integration. Features can be configured and monitored using [Quilt4Net Web](https://quilt4net.com).
+NuGet packages that connect a .NET application to [Quilt4Net](https://quilt4net.com),
+a service that runs the parts every application needs once it is live:
+
+- **Remote configuration and feature toggles**, read while the application runs.
+- **Content** in every language, with AI translation.
+- **Health endpoints, heartbeats and uptime**, with alerts to your phone.
+- **Logging** to Application Insights, tagged with application, environment and version.
+- **Value groups** that hand settings and secrets to the application at start.
+
+Each package also works on its own: the health endpoints and the request logging
+need no Quilt4Net account. With an account and an API key, the same packages read
+their settings and content from Quilt4Net and report back to it.
+[What Quilt4Net does](https://quilt4net.com/product).
 
 ## Packages
 
