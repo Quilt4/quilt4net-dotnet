@@ -166,7 +166,7 @@ internal class RemoteConfigCallService : IRemoteConfigCallService, IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                LogNonSuccess(key, response, background: false);
+                await LogNonSuccessAsync(key, response, background: false);
                 CacheFailure(cacheKey, null, RetryAfterPolicy.Of(response));
                 return Resolved(key, defaultValue, ConfigurationSource.Fallback, true, sw);
             }
@@ -226,7 +226,7 @@ internal class RemoteConfigCallService : IRemoteConfigCallService, IDisposable
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    LogNonSuccess(key, response, background: true);
+                    await LogNonSuccessAsync(key, response, background: true);
                     CacheFailure(cacheKey, _localCache.GetValueOrDefault(cacheKey), RetryAfterPolicy.Of(response));
                     return;
                 }
@@ -276,6 +276,12 @@ internal class RemoteConfigCallService : IRemoteConfigCallService, IDisposable
         {
             using var client = GetHttpClient();
             var response = await client.GetAsync("Api/Configuration");
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogWarning("No configuration list: {Detail} Returning empty list.", await ForbiddenDetailAsync(response));
+                return [];
+            }
 
             if (!response.IsSuccessStatusCode)
             {
@@ -368,8 +374,13 @@ internal class RemoteConfigCallService : IRemoteConfigCallService, IDisposable
     /// makes a healthy shed look like a failure and buries the errors that are real. The content
     /// client has drawn this distinction since 1.0.6; configuration had no 429 handling at all until
     /// the server began shedding per caller.
+    /// <para>
+    /// A <c>403</c> is a warning too, carrying the server's own sentence: the key lacks
+    /// <c>config:read</c>, or the team has switched Remote configuration off - a choice, after which
+    /// every read falls back to its default by design.
+    /// </para>
     /// </remarks>
-    private void LogNonSuccess(string key, HttpResponseMessage response, bool background)
+    private async Task LogNonSuccessAsync(string key, HttpResponseMessage response, bool background)
     {
         var what = background ? "Background refresh for" : "Unable to get feature toggle for key";
 
@@ -380,8 +391,21 @@ internal class RemoteConfigCallService : IRemoteConfigCallService, IDisposable
             return;
         }
 
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("{What} '{Key}' was refused (403): {Detail} Using the default value.",
+                what, key, await ForbiddenDetailAsync(response));
+            return;
+        }
+
         _logger.LogError("{What} '{Key}' failed. Response was {StatusCode} {ReasonPhrase}.",
             what, key, response.StatusCode, response.ReasonPhrase);
+    }
+
+    private static async Task<string> ForbiddenDetailAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return ProblemResponse.DetailOf(body) ?? response.ReasonPhrase;
     }
 
     /// <param name="overrideDuration">

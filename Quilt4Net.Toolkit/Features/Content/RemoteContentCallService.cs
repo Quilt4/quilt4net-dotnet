@@ -275,6 +275,13 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
 
             WarnIfSlow(sw.ElapsedMilliseconds, $"language load via '{address}'", (int)response.StatusCode, response.ReasonPhrase);
 
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                await LogForbiddenAsync("Reading languages", response);
+                _languagesValidTo = DateTime.UtcNow.Add(_lastKnownLanguageTtl > TimeSpan.Zero ? _lastKnownLanguageTtl : FallbackCacheDuration);
+                return _languages ?? [];
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("Unable to get languages from '{Address}'. Response was {StatusCode} {ReasonPhrase}. Returning cached or empty list.",
@@ -495,6 +502,30 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
     /// in front of the server answers with a full HTML page, and that does not belong in a log.
     /// Never throws: this runs on a path that is already reporting a failure.
     /// </summary>
+    /// <summary>How often a 403 is logged; every read in between falls back the same way.</summary>
+    private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromMinutes(5);
+
+    private long _forbiddenLoggedAt;
+
+    /// <summary>
+    /// A 403 means the key lacks <c>content:read</c> or <c>language:read</c>, or the team has switched its
+    /// Content off on the server - a choice, after which every read falls back to its default by design.
+    /// So it is a warning with the server's own sentence, and at most once every
+    /// <see cref="ForbiddenLogInterval"/>: a page of fifty keys would otherwise write fifty.
+    /// </summary>
+    private async Task LogForbiddenAsync(string what, HttpResponseMessage response)
+    {
+        var now = System.Environment.TickCount64;
+        var last = Interlocked.Read(ref _forbiddenLoggedAt);
+        if (last != 0 && now - last < (long)ForbiddenLogInterval.TotalMilliseconds) return;
+        if (Interlocked.CompareExchange(ref _forbiddenLoggedAt, now, last) != last) return;
+
+        var body = response.Content == null ? null : await response.Content.ReadAsStringAsync();
+        var detail = ProblemResponse.DetailOf(body) ?? response.ReasonPhrase;
+        _logger.LogWarning("{What} was refused (403): {Detail} Using default values; logged at most every {Minutes} minutes.",
+            what, detail, ForbiddenLogInterval.TotalMinutes);
+    }
+
     private static async Task<string> ReadErrorBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         const int maxLength = 200;
@@ -635,6 +666,10 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                     _logger.LogWarning("Rate limited (429) getting content for key '{Key}'. Backing off for {RetryAfter}.",
                         key, RetryAfterPolicy.Of(response)?.ToString() ?? "the default failure duration");
                 }
+                else if (response.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    await LogForbiddenAsync("Reading content", response);
+                }
                 else
                 {
                     _logger.LogError("Unable to get content for key '{Key}'. Response was {StatusCode} {ReasonPhrase}.",
@@ -733,6 +768,10 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                     {
                         _logger.LogWarning("Background refresh for content '{Key}' was rate limited (429). Backing off for {RetryAfter}.",
                             key, RetryAfterPolicy.Of(response)?.ToString() ?? "the default failure duration");
+                    }
+                    else if (response.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        await LogForbiddenAsync("Refreshing content", response);
                     }
                     else
                     {
@@ -1012,9 +1051,11 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
             // same Retry-After - so back-off and logging stay per key.
             if (!response.IsSuccessStatusCode)
             {
+                // The body travels with each key too, so a 403 can still say why (a switched-off feature).
+                var body = await response.Content.ReadAsStringAsync(cts.Token);
                 return requests.Select(_ =>
                 {
-                    var failed = new HttpResponseMessage(response.StatusCode) { ReasonPhrase = response.ReasonPhrase };
+                    var failed = new HttpResponseMessage(response.StatusCode) { ReasonPhrase = response.ReasonPhrase, Content = new StringContent(body) };
                     failed.Headers.RetryAfter = response.Headers.RetryAfter;
                     return failed;
                 }).ToArray();

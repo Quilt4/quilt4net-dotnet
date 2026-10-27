@@ -913,7 +913,7 @@ builder.AddQuilt4NetApplicationInsightsClient();
 
 In local mode the host picks the auth flavour via the `AuthMode` option: `ClientSecret` (TenantId + ClientId + ClientSecret), `ManagedIdentity` (Azure-hosted, no secret in config), or `DefaultAzureCredential` (one config that works locally via `az login` and in Azure via MI). See the [`Quilt4Net.Toolkit` README — Managed Identity / DefaultAzureCredential sections](../Quilt4Net.Toolkit/README.md#managed-identity) for the full table, `appsettings.json` shape, and the Azure IAM step (Log Analytics Reader). **All AI-querying components inherit whichever auth mode is configured** — `LogView`, `VersionMatrixDisplay`, `MetricsView`, `MetricChart`, `MetricLatestChart`, `LogCountView`, `LogCountByServiceView`, and `LogSummaryView` all go through one shared `LogsQueryClient` built once from the configured credential. No per-component setting.
 
-**Remote mode** — credentials are pulled from Quilt4Net.Server using an API key that carries the `monitor:read` scope:
+**Remote mode** — credentials are pulled from Quilt4Net.Server using an API key that carries the `logging:read` scope (formerly `monitor:read`):
 ```csharp
 builder.AddQuilt4NetBlazorApplicationInsightsClientRemote();
 ```
@@ -1271,7 +1271,7 @@ builder.AddQuilt4NetApplicationInsightsClient();
 }
 ```
 
-**Remote** — credentials fetched from Quilt4Net.Server with an API key that carries the `monitor:read` scope:
+**Remote** — credentials fetched from Quilt4Net.Server with an API key that carries the `logging:read` scope (formerly `monitor:read`):
 ```csharp
 builder.AddQuilt4NetBlazorApplicationInsightsClientRemote();
 ```
@@ -1280,7 +1280,7 @@ builder.AddQuilt4NetBlazorApplicationInsightsClientRemote();
   "Quilt4Net": {
     "RemoteConfiguration": {
       "Quilt4NetAddress": "https://quilt4net.com/",
-      "ApiKey": "<monitor:read API key>"
+      "ApiKey": "<logging:read API key>"
     }
   }
 }

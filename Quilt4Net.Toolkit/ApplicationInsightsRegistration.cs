@@ -127,7 +127,7 @@ public static class ApplicationInsightsRegistration
     /// Register the Application Insights client for consumers that pull configurations from
     /// Quilt4Net.Server instead of from their own <c>appsettings.json</c>. The API key is
     /// resolved from <c>Quilt4Net:RemoteConfiguration</c> (or the top-level <c>Quilt4Net:ApiKey</c>
-    /// fallback) and must carry the <c>monitor:read</c> scope. Mutually exclusive with
+    /// fallback) and must carry the <c>logging:read</c> (formerly <c>monitor:read</c>) scope. Mutually exclusive with
     /// <see cref="AddQuilt4NetApplicationInsightsClient(IHostApplicationBuilder, Action{ApplicationInsightsOptions})"/>:
     /// use one or the other, not both.
     /// </summary>
