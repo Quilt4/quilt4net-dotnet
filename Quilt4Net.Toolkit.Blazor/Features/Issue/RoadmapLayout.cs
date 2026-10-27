@@ -36,8 +36,11 @@ internal static class RoadmapLayout
     internal const double LanePadding = 16;
     internal const double HeaderHeight = 36;
 
-    /// <summary>The name of the virtual column terminal items are drawn in, left of Now.</summary>
-    internal const string ClosedColumn = "Closed";
+    /// <summary>
+    /// The name of the virtual column terminal items are drawn in, left of Now. <c>Done</c>, the
+    /// default workflow's terminal state, which reads as "finished with" whatever the outcome.
+    /// </summary>
+    internal const string ClosedColumn = "Done";
 
     /// <summary>
     /// One colour per route, in this fixed order. The first eight are the data-viz reference

@@ -24,4 +24,21 @@ public record SetIssueStateRequest
     /// first decision's reason.
     /// </remarks>
     public string Resolution { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Which phase the issue is in within <see cref="State"/>, naming one of that state's
+    /// sub-states. Rejected on a terminal state, whose outcome is <see cref="Resolution"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Moving to another state clears the sub-state unless this names one of the target's. Naming
+    /// the state the issue is already in changes only the sub-state, and needs no transition:
+    /// <c>null</c> leaves it as it is, an empty string clears it.
+    /// </para>
+    /// <para>
+    /// <c>null</c> by default so a client built before sub-states existed — which re-sends the
+    /// current state to take over a claim — cannot wipe a sub-state it never knew about.
+    /// </para>
+    /// </remarks>
+    public string SubState { get; init; }
 }

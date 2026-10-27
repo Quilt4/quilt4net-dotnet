@@ -44,6 +44,17 @@ public record IssueWorkflowStateResponse
     /// roadmap unless they are an endpoint of a drawn edge, where they explain the edge.
     /// </summary>
     public required bool IsTerminal { get; init; }
+
+    /// <summary>
+    /// The phases an issue may be in within this state, in display order. Empty on a terminal state,
+    /// whose outcomes are <see cref="IssueWorkflowResponse.Resolutions"/>.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>required</c>, for the same reason as <see cref="IssueResponse.References"/>: the Toolkit
+    /// publishes before the Server that populates it. Empty reads as "no sub-states", which is what
+    /// an older server means.
+    /// </remarks>
+    public IssueWorkflowSubStateResponse[] SubStates { get; init; } = [];
 }
 
 /// <summary>One permitted move in an <see cref="IssueWorkflowResponse"/>.</summary>

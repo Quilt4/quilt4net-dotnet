@@ -54,6 +54,22 @@ public record IssueResponse
     /// </remarks>
     public string Resolution { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Which phase the issue is in within <see cref="State"/>, naming one of that state's
+    /// <see cref="IssueWorkflowStateResponse.SubStates"/>, or empty when none is set.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>required</c>, for the reason spelled out on <see cref="References"/>. Always empty on a
+    /// terminal state, where <see cref="Resolution"/> says how the issue ended.
+    /// </remarks>
+    public string SubState { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When the issue entered <see cref="SubState"/> (UTC), or <c>null</c> when it holds none — so a
+    /// card can say "Testing for 3 days".
+    /// </summary>
+    public DateTime? SubStateSinceUtc { get; init; }
+
     /// <summary>Key of the assigned team member, or empty when unassigned.</summary>
     public required string AssignedUserKey { get; init; }
 

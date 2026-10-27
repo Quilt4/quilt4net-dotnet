@@ -1,12 +1,12 @@
 namespace Quilt4Net.Toolkit.Features.Issue;
 
 /// <summary>
-/// One way an issue can end, declared by the team's workflow — <c>Done</c>, <c>Won't do</c>, and
-/// whatever else a team needs.
+/// One way an issue can end, declared by the team's workflow — <c>Delivered</c>, <c>Won't do</c>,
+/// <c>No action</c>, and whatever else a team needs. The terminal state's sub-states, in effect.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A workflow has one exit rather than one per outcome: <c>Todo → Doing → Closed</c>, with the
+/// A workflow has one exit rather than one per outcome: <c>Todo → Doing → Done</c>, with the
 /// <i>reason</i> held on the issue. That keeps "is this finished" a single question — a set of
 /// terminal states has to be enumerated everywhere it is asked, and every place that forgets one
 /// gives a silently wrong answer. Outcomes also multiply where states should not: adding
