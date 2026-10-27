@@ -63,13 +63,22 @@ public class TelemetryIdentityEnrichmentTests
     [Fact]
     public void LogProcessor_preserves_pre_existing_attributes()
     {
+        // Runs inside the pipeline and copies the attributes there: from OpenTelemetry 1.20 a LogRecord is
+        // returned to a pool once the pipeline is done, so a record read afterwards has lost its attributes.
         var seed = new List<KeyValuePair<string, object>> { new("custom-key", "custom-value") };
-        var record = BuildLogRecord(seed);
+        List<KeyValuePair<string, object>> attributes = null;
+        using (var loggerFactory = LoggerFactory.Create(b => b.AddOpenTelemetry(o =>
+               {
+                   o.AddProcessor(new SeedProcessor(seed));
+                   o.AddProcessor(new TelemetryIdentityLogProcessor(FullIdentity));
+                   o.AddProcessor(new CaptureProcessor(r => attributes = r.Attributes?.ToList()));
+               })))
+        {
+            loggerFactory.CreateLogger("test").LogInformation("hello");
+        }
 
-        new TelemetryIdentityLogProcessor(FullIdentity).OnEnd(record);
-
-        record.Attributes.Should().Contain(kv => kv.Key == "custom-key" && kv.Value!.Equals("custom-value"));
-        record.Attributes.Should().Contain(kv => kv.Key == "deployment.environment");
+        attributes.Should().Contain(kv => kv.Key == "custom-key" && kv.Value!.Equals("custom-value"));
+        attributes.Should().Contain(kv => kv.Key == "deployment.environment");
     }
 
     [Fact]

@@ -60,10 +60,12 @@ public class Quilt4NetStartupLoggerTests
         // the captured LogRecord.Attributes contains ("Quilt4NetStartup", "true"). If anyone
         // ever reverts to scope-based emission, this test fails immediately — proving the
         // property would have been dropped before reaching the Azure Monitor exporter.
-        LogRecord captured = null!;
+        // The attributes are copied inside the pipeline: from OpenTelemetry 1.20 a LogRecord is returned to a
+        // pool once the pipeline is done, so a record read afterwards has lost its attributes.
+        List<KeyValuePair<string, object>> attributes = null;
         using var loggerFactory = LoggerFactory.Create(b =>
         {
-            b.AddOpenTelemetry(o => o.AddProcessor(new CaptureLogRecordProcessor(r => captured = r)));
+            b.AddOpenTelemetry(o => o.AddProcessor(new CaptureLogRecordProcessor(r => attributes = r.Attributes?.ToList())));
         });
         var logger = loggerFactory.CreateLogger<Quilt4NetStartupLoggerTests>();
         var options = new Quilt4NetLoggingOptions
@@ -75,8 +77,8 @@ public class Quilt4NetStartupLoggerTests
 
         Quilt4NetStartupLogger.Log(logger, options);
 
-        captured.Should().NotBeNull();
-        captured.Attributes.Should().Contain(kv => kv.Key == "Quilt4NetStartup" && kv.Value!.Equals("true"));
+        attributes.Should().NotBeNull();
+        attributes.Should().Contain(kv => kv.Key == "Quilt4NetStartup" && kv.Value!.Equals("true"));
     }
 
     [Fact]
