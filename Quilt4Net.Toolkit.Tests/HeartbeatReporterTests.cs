@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Quilt4Net.Toolkit.Features.HeartbeatReporting;
@@ -39,6 +40,28 @@ public class HeartbeatReporterTests
         var accepted = await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
 
         accepted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Heartbeats_refused_by_a_switched_off_feature_are_said_once_with_the_servers_sentence()
+    {
+        const string body = """{"title":"Forbidden","status":403,"detail":"'heartbeat:write' belongs to Monitoring, which is switched off for this team."}""";
+        var log = new List<(LogLevel Level, string Message)>();
+        var sut = new HeartbeatReporter(new StubHttpClientFactory(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent(body) })),
+            Options.Create(new HeartbeatReportingOptions()), new RecordingLogger(log));
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        log.Should().ContainSingle().Which.Should().Match<(LogLevel Level, string Message)>(x =>
+            x.Level == LogLevel.Warning && x.Message.Contains("'heartbeat:write' belongs to Monitoring, which is switched off for this team."));
+    }
+
+    private sealed class RecordingLogger(List<(LogLevel, string)> entries) : ILogger<HeartbeatReporter>
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) => entries.Add((logLevel, formatter(state, exception)));
     }
 
     [Fact]
