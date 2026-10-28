@@ -95,11 +95,38 @@ public class Quilt4NetPanelTests : BunitContext
         Services.AddSingleton(client.Object);
 
         var cut = Render<Quilt4NetNotificationSender>();
-        cut.Find("input[maxlength='4000']").Change("Hello");
+        cut.Find("input[maxlength='4000']").Input("Hello");
         cut.FindAll("button").Single(b => b.TextContent.Contains("Send")).Click();
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("nobody will hear it"));
         client.Verify(x => x.SendAsync("info", "Hello", It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void Finding_a_text_searches_the_cached_keys_and_texts_and_says_where_each_came_from()
+    {
+        var content = new Mock<IRemoteContentCallService>();
+        content.Setup(x => x.GetCacheStatus()).Returns([new ContentCacheLanguageStatus(Guid.Empty, 2, 1, DateTime.UtcNow.AddMinutes(9), null)]);
+        content.Setup(x => x.GetCachedEntries(It.IsAny<Guid?>())).Returns(
+        [
+            new ContentCacheEntry("menu.home", "App", Guid.Empty, "Home", DateTime.UtcNow.AddMinutes(9), false, null),
+            new ContentCacheEntry("footer.text", "App", Guid.Empty, "Made with the menu", DateTime.UtcNow.AddMinutes(9), true, null)
+        ]);
+        var language = new Mock<ILanguageStateService>();
+        language.Setup(x => x.Languages).Returns([]);
+        Services.AddSingleton(content.Object);
+        Services.AddSingleton(language.Object);
+        Services.AddSingleton(Mock.Of<IContentService>());
+        Services.AddSingleton(Mock.Of<IEditContentService>());
+        Services.AddSingleton(Mock.Of<IContentSourceService>());
+        Services.AddSingleton(Mock.Of<IContentAdminService>());
+        Services.AddSingleton<IConnectionService>(new Connected());
+
+        var cut = Render<Quilt4Net.Toolkit.Blazor.Features.Language.ContentAdmin>();
+        cut.Find("input[placeholder='Key or text']").Input("menu");
+
+        cut.Markup.Should().Contain("menu.home").And.Contain("footer.text", "the text matches too")
+            .And.Contain("Server").And.Contain("Default in code");
     }
 
     private void RegisterAll()
@@ -114,4 +141,9 @@ public class Quilt4NetPanelTests : BunitContext
 
     private static Quilt4NetEndpointCheck Check(string feature, WhoAmIResponse whoAmI)
         => new(new Quilt4NetEndpoint(feature, "https://quilt4net.com/", "key"), true, 200, 12, whoAmI, "4.3.66", null);
+
+    private sealed class Connected : IConnectionService
+    {
+        public Task<ConnectionResult> CanConnectAsync(Service service) => Task.FromResult(new ConnectionResult { Success = true });
+    }
 }

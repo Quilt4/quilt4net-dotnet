@@ -2,6 +2,7 @@ using Quilt4Net.Toolkit;
 using Quilt4Net.Toolkit.Api;
 using Quilt4Net.Toolkit.Blazor;
 using Quilt4Net.Toolkit.Blazor.Server.Sample.Components;
+using Quilt4Net.Toolkit.Health;
 using Radzen;
 using Serilog;
 using Serilog.Events;
@@ -58,6 +59,12 @@ builder.AddQuilt4NetBlazorContent(o =>
 
 builder.AddQuilt4NetApplicationInsightsClient();
 builder.AddQuilt4NetRemoteConfiguration();
+
+// The rest of what the Quilt4Net panel (/quilt4net) shows: this instance's heartbeat, sending a
+// notification (needs a key with notification:write; the tab hides without it) and health checks.
+builder.AddQuilt4NetHeartbeatReporting(o => o.Capabilities = ["sample"]);
+builder.AddQuilt4NetNotifications();
+builder.AddQuilt4NetHealth();
 
 // Register the per-record telemetry-identity processors (env / app / version / host /
 // quilt4net.monitor) and the request middleware that mints / honors X-Correlation-ID.

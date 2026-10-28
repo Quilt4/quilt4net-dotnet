@@ -100,7 +100,7 @@
 
         <RadzenCard>
             <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">Find a text</RadzenText>
-            <RadzenTextBox @bind-Value="_search" @bind-Value:event="oninput" Placeholder="Key or text" Style="width: 100%; max-width: 420px;" />
+            <RadzenTextBox Value="@_search" @oninput="@(e => _search = e.Value?.ToString())" Placeholder="Key or text" Style="width: 100%; max-width: 420px;" />
             @if (!string.IsNullOrWhiteSpace(_search))
             {
                 var found = Find();

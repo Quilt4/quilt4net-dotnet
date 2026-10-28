@@ -29,11 +29,12 @@ else
                 }
                 else
                 {
-                    <RadzenTextBox @bind-Value="_category" MaxLength="100" Style="width: 170px;" />
+                    <RadzenTextBox Value="@_category" @oninput="@(e => _category = e.Value?.ToString())" MaxLength="100" Style="width: 170px;" />
                 }
             </RadzenFormField>
             <RadzenFormField Text="Message" Style="flex: 1 1 320px;">
-                <RadzenTextBox @bind-Value="_message" MaxLength="4000" />
+                @* Updated as typed, so Send enables without leaving the box first. *@
+                <RadzenTextBox Value="@_message" @oninput="@(e => _message = e.Value?.ToString())" MaxLength="4000" />
             </RadzenFormField>
             <RadzenButton Text="Send" Icon="send" IsBusy="@_sending" BusyText="Sending…" Disabled="@(string.IsNullOrWhiteSpace(_category) || string.IsNullOrWhiteSpace(_message))" Click="@SendAsync" />
         </RadzenStack>

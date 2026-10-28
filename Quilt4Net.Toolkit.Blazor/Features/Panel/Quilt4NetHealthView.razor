@@ -14,7 +14,11 @@ else
     <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
         <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween">
             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="8px">
-                @if (_components != null)
+                @if (_components is { Count: 0 } && _problem == null)
+                {
+                    <span>No health checks are registered. Add them with AddComponent, AddDependency or AddComponentService in AddQuilt4NetHealth.</span>
+                }
+                else if (_components != null)
                 {
                     var overall = _components.Count == 0 ? HealthStatus.Healthy : _components.Max(x => x.Value.Status);
                     <RadzenBadge BadgeStyle="@Style(overall)" Text="@overall.ToString()" />
@@ -27,7 +31,10 @@ else
         {
             <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Style="margin: 0;">@_problem</RadzenAlert>
         }
-        @if (_components == null)
+        @if (_components is { Count: 0 })
+        {
+        }
+        else if (_components == null)
         {
             <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
         }
