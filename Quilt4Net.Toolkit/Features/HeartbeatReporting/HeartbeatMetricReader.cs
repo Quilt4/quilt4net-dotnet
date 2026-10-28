@@ -16,7 +16,8 @@ internal sealed class HeartbeatMetricReader
 {
     public const string ProcessCpu = "cpu.process";
     public const string MachineCpu = "cpu.machine";
-    public const string Memory = "memory";
+    public const string ProcessMemory = "memory.process";
+    public const string MachineMemory = "memory.machine";
     public const string Percent = "percent";
 
     private readonly HeartbeatReportingOptions _options;
@@ -38,7 +39,8 @@ internal sealed class HeartbeatMetricReader
 
         if (_options.Cpu.HasFlag(CpuMetric.Process)) Add(metrics, ProcessCpu, ReadProcessCpu);
         if (_options.Cpu.HasFlag(CpuMetric.Machine)) Add(metrics, MachineCpu, ReadMachineCpu);
-        if (_options.Memory) Add(metrics, Memory, ReadMemory);
+        if (_options.Memory.HasFlag(MemoryMetric.Process)) Add(metrics, ProcessMemory, ReadProcessMemory);
+        if (_options.Memory.HasFlag(MemoryMetric.Machine)) Add(metrics, MachineMemory, ReadMachineMemory);
 
         foreach (var custom in _options.CustomMetrics)
         {
@@ -109,10 +111,23 @@ internal sealed class HeartbeatMetricReader
     }
 
     /// <summary>
-    /// Memory in use over what is available to this process: the machine's, or the container's limit.
-    /// From the garbage collector, so it is the same on every platform; empty until the first collection.
+    /// This process's working set over the memory available to it: the machine's, or the container's
+    /// limit, as the garbage collector sees it.
     /// </summary>
-    private static double? ReadMemory()
+    private static double? ReadProcessMemory()
+    {
+        var available = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        if (available <= 0) return null;
+
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        return process.WorkingSet64 * 100.0 / available;
+    }
+
+    /// <summary>
+    /// All memory in use over what is available: the machine's, or the container's limit. From the
+    /// garbage collector, so it is the same on every platform; empty until the first collection.
+    /// </summary>
+    private static double? ReadMachineMemory()
     {
         var info = GC.GetGCMemoryInfo();
         return info.TotalAvailableMemoryBytes > 0 && info.MemoryLoadBytes > 0

@@ -517,9 +517,10 @@ Built in, in percent:
 |--------|--------|---------|---|
 | `cpu.process` | `Cpu` has `Process` | on | This application's processor use over all cores, since the previous heartbeat. Same on every platform. |
 | `cpu.machine` | `Cpu` has `Machine` | off | The whole machine's, on Windows and Linux, from the second heartbeat on. Inside a container it is the host's. |
-| `memory` | `Memory` | on | Memory in use over what is available to the process: the machine's, or the container's limit. |
+| `memory.process` | `Memory` has `Process` | on | This application's working set over the memory available to it. |
+| `memory.machine` | `Memory` has `Machine` | off | All memory in use. Memory is measured against what is available to the process: the machine's, or the container's limit. |
 
-`Cpu` is a flags enum: `None`, `Process`, `Machine` or `Both`.
+`Cpu` and `Memory` are flags enums: `None`, `Process`, `Machine` or `Both`.
 
 Add values of your own; each is read on every heartbeat:
 
@@ -527,13 +528,14 @@ Add values of your own; each is read on every heartbeat:
 builder.AddQuilt4NetHeartbeatReporting(o =>
 {
     o.Cpu = CpuMetric.Both;
+    o.Memory = MemoryMetric.Both;
     o.AddMetric("queue.length", () => queue.Count, "items");
     o.AddMetric("cache.hit-ratio", async ct => await cache.GetHitRatioAsync(ct), "percent");
 });
 ```
 
 A metric that throws or is not a finite number is logged and left out of that heartbeat; the heartbeat
-itself is always sent. Names are unique and at most 64 characters, and at most 17 are your own.
+itself is always sent. Names are unique and at most 64 characters, and at most 16 are your own.
 
 ### HeartbeatReportingOptions
 
@@ -550,7 +552,7 @@ Bound from `Quilt4Net:HeartbeatReporting`, falling back to `Quilt4Net:ApiKey` an
 | `Environment` | host environment name | Environment to report. |
 | `Instance` | machine name | Tells two copies of the application apart. |
 | `Cpu` | `Process` | Which processor use to report: `None`, `Process`, `Machine` or `Both`. |
-| `Memory` | `true` | Whether to report memory in use. |
+| `Memory` | `Process` | Which memory use to report: `None`, `Process`, `Machine` or `Both`. |
 
 ## Health check client
 

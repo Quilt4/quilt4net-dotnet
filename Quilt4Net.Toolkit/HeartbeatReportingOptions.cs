@@ -61,17 +61,18 @@ public record HeartbeatReportingOptions
     public CpuMetric Cpu { get; set; } = CpuMetric.Process;
 
     /// <summary>
-    /// Whether each heartbeat reports memory in use, as <c>memory</c> in percent of what is available to
-    /// the process (the machine's, or the container's limit). Default is true.
+    /// Which memory use each heartbeat reports, in percent of the memory available to the process (the
+    /// machine's, or the container's limit). Default is <see cref="MemoryMetric.Process"/>: this
+    /// application's own. Set <see cref="MemoryMetric.None"/> to send none.
     /// </summary>
-    public bool Memory { get; set; } = true;
+    public MemoryMetric Memory { get; set; } = MemoryMetric.Process;
 
-    /// <summary>The most metrics of the application's own: with the three built-in ones, Quilt4Net takes at most 20.</summary>
-    public const int MaxCustomMetrics = 17;
+    /// <summary>The most metrics of the application's own: with the four built-in ones, Quilt4Net takes at most 20.</summary>
+    public const int MaxCustomMetrics = 16;
 
     private const int MaxMetricNameLength = 64;
     private const int MaxUnitLength = 16;
-    private static readonly string[] BuiltInMetrics = [HeartbeatMetricReader.ProcessCpu, HeartbeatMetricReader.MachineCpu, HeartbeatMetricReader.Memory];
+    private static readonly string[] BuiltInMetrics = [HeartbeatMetricReader.ProcessCpu, HeartbeatMetricReader.MachineCpu, HeartbeatMetricReader.ProcessMemory, HeartbeatMetricReader.MachineMemory];
 
     private readonly List<CustomHeartbeatMetric> _customMetrics = [];
 

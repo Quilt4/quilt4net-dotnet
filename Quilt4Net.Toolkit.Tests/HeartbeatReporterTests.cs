@@ -75,7 +75,7 @@ public class HeartbeatReporterTests
     }
 
     [Fact]
-    public async Task A_report_carries_process_cpu_and_memory_by_default()
+    public async Task A_report_carries_the_processs_own_cpu_and_memory_by_default()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
         var sut = CreateSut(handler, new HeartbeatReportingOptions());
@@ -84,7 +84,7 @@ public class HeartbeatReporterTests
         await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
 
         var metrics = Metrics(handler);
-        metrics.Keys.Should().BeEquivalentTo(["cpu.process", "memory"]);
+        metrics.Keys.Should().BeEquivalentTo(["cpu.process", "memory.process"]);
         metrics.Values.Should().AllSatisfy(x => x.Value.Should().BeInRange(0, 100));
         metrics.Values.Should().AllSatisfy(x => x.Unit.Should().Be("percent"));
     }
@@ -93,7 +93,7 @@ public class HeartbeatReporterTests
     public async Task Built_in_metrics_can_be_switched_off()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
-        var sut = CreateSut(handler, new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false });
+        var sut = CreateSut(handler, new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = MemoryMetric.None });
 
         await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
 
@@ -101,11 +101,23 @@ public class HeartbeatReporterTests
     }
 
     [Fact]
+    public async Task Both_reports_the_process_and_the_whole_machine()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var sut = CreateSut(handler, new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = MemoryMetric.Both });
+        GC.Collect();
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        Metrics(handler).Keys.Should().BeEquivalentTo(["memory.process", "memory.machine"]);
+    }
+
+    [Fact]
     public async Task The_applications_own_metrics_are_read_on_each_heartbeat()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
         var queue = 3;
-        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false }
+        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = MemoryMetric.None }
             .AddMetric("queue.length", () => queue, "items")
             .AddMetric("cache.hit-ratio", async ct => { await Task.Yield(); return 87.5; });
         var sut = CreateSut(handler, options);
@@ -123,7 +135,7 @@ public class HeartbeatReporterTests
     public async Task A_metric_that_throws_is_left_out_and_the_heartbeat_is_still_sent()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
-        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false }
+        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = MemoryMetric.None }
             .AddMetric("broken", (Func<double>)(() => throw new InvalidOperationException("no queue")))
             .AddMetric("not.a.number", () => double.NaN)
             .AddMetric("fine", () => 1);
@@ -137,7 +149,7 @@ public class HeartbeatReporterTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("memory")]
+    [InlineData("memory.machine")]
     [InlineData("CPU.Process")]
     public void A_metric_name_that_is_empty_or_built_in_is_refused(string name)
     {
@@ -157,7 +169,7 @@ public class HeartbeatReporterTests
     }
 
     [Fact]
-    public void At_most_seventeen_metrics_of_your_own_fit_beside_the_built_in_ones()
+    public void At_most_sixteen_metrics_of_your_own_fit_beside_the_built_in_ones()
     {
         var options = new HeartbeatReportingOptions();
         for (var i = 0; i < HeartbeatReportingOptions.MaxCustomMetrics; i++) options.AddMetric($"m{i}", () => i);
