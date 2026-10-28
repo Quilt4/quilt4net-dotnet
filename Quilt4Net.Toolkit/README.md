@@ -499,7 +499,10 @@ one that can, say, `import` goes quiet.
 builder.AddQuilt4NetHeartbeatReporting(o => o.Capabilities = ["import", "export"]);
 ```
 
-A report is sent at start and then every `Interval`. A failed report is logged and retried on the next
+A report is sent at start and then every `Interval`. Besides the application, environment, instance and
+version, each tells Quilt4Net the machine name, runtime, operating system, when the process started, its
+interval, the Toolkit version and the processor count. Quilt4Net shows each instance with an uptime bar
+like an HTTP monitor's: a heartbeat more than two intervals and a minute late counts as a silence. A failed report is logged and retried on the next
 interval, never thrown — the application keeps running when Quilt4Net cannot be reached, and the missed
 heartbeat is what the rule is there to notice.
 

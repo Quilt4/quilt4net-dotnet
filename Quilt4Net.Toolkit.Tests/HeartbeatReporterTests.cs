@@ -33,6 +33,25 @@ public class HeartbeatReporterTests
     }
 
     [Fact]
+    public async Task A_report_says_where_it_runs_and_how_often_it_reports()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var sut = CreateSut(handler, new HeartbeatReportingOptions { Instance = "worker-a", Interval = TimeSpan.FromMinutes(2) });
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        var body = JsonDocument.Parse(handler.LastBody).RootElement;
+        body.GetProperty("instance").GetString().Should().Be("worker-a");
+        body.GetProperty("machineName").GetString().Should().Be(Environment.MachineName, "the machine is named even when the instance is not");
+        body.GetProperty("intervalSeconds").GetInt32().Should().Be(120);
+        body.GetProperty("processorCount").GetInt32().Should().Be(Environment.ProcessorCount);
+        body.GetProperty("runtime").GetString().Should().StartWith(".NET");
+        body.GetProperty("operatingSystem").GetString().Should().NotBeNullOrEmpty();
+        body.GetProperty("toolkitVersion").GetString().Should().NotBeNullOrEmpty().And.NotContain("+");
+        body.GetProperty("startedUtc").GetDateTime().Should().BeBefore(DateTime.UtcNow.AddSeconds(1));
+    }
+
+    [Fact]
     public async Task A_refusal_is_reported_as_not_accepted_rather_than_thrown()
     {
         var sut = CreateSut(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)), new HeartbeatReportingOptions());

@@ -96,6 +96,36 @@ internal class HeartbeatReporter : BackgroundService
             _options.Environment ?? _hostEnvironment?.EnvironmentName,
             _options.Instance ?? System.Environment.MachineName,
             entry?.Version?.ToString(),
-            _options.Capabilities ?? []);
+            _options.Capabilities ?? [])
+        {
+            MachineName = System.Environment.MachineName,
+            Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            StartedUtc = ProcessStartUtc.Value,
+            IntervalSeconds = (int)Math.Round(_options.Interval.TotalSeconds),
+            ToolkitVersion = ToolkitVersion.Value,
+            ProcessorCount = System.Environment.ProcessorCount
+        };
     }
+
+    private static readonly Lazy<DateTime?> ProcessStartUtc = new(() =>
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return process.StartTime.ToUniversalTime();
+        }
+        catch (Exception e) when (e is InvalidOperationException or NotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    });
+
+    /// <summary>The informational version, without the build metadata after <c>+</c>, which is the commit.</summary>
+    private static readonly Lazy<string> ToolkitVersion = new(() =>
+    {
+        var assembly = typeof(HeartbeatReporter).Assembly;
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        return informational?.Split('+')[0] ?? assembly.GetName().Version?.ToString();
+    });
 }
