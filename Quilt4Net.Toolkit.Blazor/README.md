@@ -599,7 +599,12 @@ Or use the built-in admin component.
 <ContentAdmin />
 ```
 
-The `ContentAdmin` component provides toggle switches for edit mode and developer mode, plus a button to reload content.
+The `ContentAdmin` component has the switches for edit mode, developer mode and the content source
+overlay, the language selector, and what the application reads as (application and environment). It
+lists the cache per language: how many values, how many are defaults, when they reload, and how the
+last bulk load went. **Find a text** searches the cached keys and texts and says where each came from:
+the server, another language or stage, or the default in code. **Reload content** clears the cache,
+reloads it and reloads the page. It is also the Content tab of the [Quilt4Net panel](#quilt4net-panel).
 
 ## Content source
 
@@ -843,6 +848,43 @@ Above the grid, an **environment** dropdown filters the rows. It defaults to the
 The dropdown is not rendered at all when every entry is shared, since there would be nothing to filter on.
 
 > The row actions (edit, reset, delete) have always acted on the row's own application/environment/instance. The columns exist so the operator can see which scope that is before acting on it.
+
+## Quilt4Net panel
+
+`Quilt4NetPanel` puts the application's Quilt4Net features on one page, a tab each:
+
+```razor
+@using Quilt4Net.Toolkit.Blazor.Features.Panel
+
+<Quilt4NetPanel />
+```
+
+| Tab | Component | Shows |
+|-----|-----------|-------|
+| Connection | `Quilt4NetConnectionView` | The application; each registered Quilt4Net feature with its address and what it answers (team, access level, scopes, response time, server version); the team's areas that are on; the live link. |
+| Content | `ContentAdmin` | See [Edit mode](#edit-mode). |
+| Configuration | `RemoteConfigurationAdmin` | See [Remote configuration](#remote-configuration). |
+| Heartbeat | `Quilt4NetHeartbeatView` | What this instance reports (application, environment, version, machine, capabilities, metrics), when it last sent, what the server answered, and **Send now**. |
+| Send notification | `Quilt4NetNotificationSender` | Sends a notification to the team's phones with a category from the team's list, and says how many phones it reached. |
+| Health | `Quilt4NetHealthView` | The application's own health checks, as its health endpoints answer them. |
+
+A tab shows only when the application registered its feature (`AddQuilt4NetBlazorContent`,
+`AddQuilt4NetRemoteConfiguration`, `AddQuilt4NetHeartbeatReporting`, `AddQuilt4NetNotifications`,
+`AddQuilt4NetHealth`), the team has the feature's area on in Quilt4Net, and the key is not known to lack
+the scope it needs. **Send notification** needs `notification:write` and never shows in a WebAssembly
+app, where the key would be public. Limit the tabs with `Tabs`, and choose the first with `SelectedTab`:
+
+```razor
+<Quilt4NetPanel Tabs="Quilt4NetPanelTabs.Connection | Quilt4NetPanelTabs.Content" />
+```
+
+**Who may open it is the application's to decide.** The panel shows configuration and can change
+content and send notifications, so put its page behind the application's own role or policy. Each tab is
+also a component of its own, for an application that wants only some of them.
+
+The **live link** says how changes made on Quilt4Net reach the application. Content is loaded in bulk
+per language over HTTP and reloads when its lifetime runs out; configuration values are read when first
+used and kept for their lifetime. SignalR push is not in this Toolkit version yet.
 
 ## Issue roadmap
 

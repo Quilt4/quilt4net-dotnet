@@ -475,7 +475,12 @@ The application, environment and machine name are sent along. Set them yourself 
 environment's name and `Environment.MachineName` are used.
 
 A failed send throws `NotificationClientException` with the status code. It is never dropped quietly:
-a sender that believes it raised an alarm when it did not is the worst outcome.
+a sender that believes it raised an alarm when it did not is the worst outcome. The answer's `Reached`
+says how many phones were woken; zero means nobody will hear it.
+
+`GetCategoriesAsync()` lists the team's notification categories, to pick from. It returns null from a
+server that cannot list them (or a key without `notification:read`); any category can still be sent, and
+one the team does not have is added.
 
 ### NotificationOptions
 
@@ -558,6 +563,11 @@ Every provider and every `AddMetric` value is read at the same time, sharing `Me
 by default); pass the token on to the calls you make. One that throws, is late, is not a finite number,
 or repeats a name already sent is logged and left out of that heartbeat; the heartbeat itself is always
 sent. Names are at most 64 characters, and a heartbeat carries at most 20 metrics.
+
+`IHeartbeatStatus` says what reporting is doing: the report last sent, when, what the server answered
+(and why it refused, such as Monitoring being switched off for the team), and when the next one goes.
+`SendNowAsync()` sends one outside the interval. It is what the Heartbeat tab of the Blazor
+`Quilt4NetPanel` shows.
 
 ### HeartbeatReportingOptions
 
