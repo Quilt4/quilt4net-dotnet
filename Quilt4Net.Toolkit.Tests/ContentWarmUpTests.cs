@@ -35,6 +35,33 @@ public class ContentWarmUpTests
     }
 
     [Fact]
+    public async Task The_cache_status_says_what_each_language_holds_and_how_its_last_bulk_load_went()
+    {
+        using var listener = StartListener(out var prefix, out _, bulkItems: [("menu.home", "Home"), ("menu.about", "About")]);
+        var (warm, _) = Build(prefix);
+
+        await warm.WarmCacheAsync(Guid.Empty, App);
+
+        var language = warm.GetCacheStatus().Should().ContainSingle().Subject;
+        language.Count.Should().Be(2);
+        language.Defaults.Should().Be(0);
+        language.FreshUntil.Should().NotBeNull();
+        language.LastWarmUp.Should().Match<ContentWarmUp>(x => x.Succeeded && x.Items == 2 && x.Problem == null);
+        warm.GetCachedEntries().Select(x => (x.Key, x.Application, x.Value)).Should().BeEquivalentTo([("menu.home", App, "Home"), ("menu.about", App, "About")]);
+    }
+
+    [Fact]
+    public async Task A_failed_bulk_load_shows_in_the_cache_status_with_its_reason()
+    {
+        using var listener = StartListener(out var prefix, out _, bulkItems: null, bulkStatus: 500);
+        var (warm, _) = Build(prefix);
+
+        await warm.WarmCacheAsync(Guid.Empty, App);
+
+        warm.GetCacheStatus().Should().ContainSingle().Which.LastWarmUp.Should().Match<ContentWarmUp>(x => !x.Succeeded && x.Problem.StartsWith("500"));
+    }
+
+    [Fact]
     public async Task WarmCacheAsync_falls_back_to_per_key_when_bulk_endpoint_returns_404()
     {
         using var listener = StartListener(out var prefix, out var state, bulkItems: null, bulkStatus: 404);

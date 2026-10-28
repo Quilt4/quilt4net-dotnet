@@ -75,6 +75,20 @@ public class NotificationClientTests
         Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
     };
 
+    [Fact]
+    public async Task The_team_s_categories_are_listed_and_none_from_a_server_that_cannot()
+    {
+        var sut = CreateSut(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{ "name": "alarm", "addedByHand": false }, { "name": "deploy" }]""", System.Text.Encoding.UTF8, "application/json")
+        }));
+
+        (await sut.GetCategoriesAsync(TestContext.Current.CancellationToken)).Should().Equal("alarm", "deploy");
+
+        var older = CreateSut(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        (await older.GetCategoriesAsync(TestContext.Current.CancellationToken)).Should().BeNull("a server before #147 lists none, and any category can still be sent");
+    }
+
     private static NotificationClient CreateSut(HttpMessageHandler handler, NotificationOptions options = null) =>
         new(new StubHttpClientFactory(handler), Options.Create(options ?? new NotificationOptions()));
 

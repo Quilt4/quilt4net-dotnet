@@ -10,4 +10,8 @@ namespace Quilt4Net.Toolkit.Features.Notification;
 /// <param name="Environment">The sending environment, if known.</param>
 /// <param name="Instance">The sending machine or instance, if known.</param>
 /// <param name="CreatedUtc">When the server stored it.</param>
-public record NotificationResponse(string Id, string Category, string Message, string Application, string Environment, string Instance, DateTime CreatedUtc);
+public record NotificationResponse(string Id, string Category, string Message, string Application, string Environment, string Instance, DateTime CreatedUtc)
+{
+    /// <summary>How many phones and devices the send woke; zero says nobody will hear it. Null from a server that does not say.</summary>
+    public int? Reached { get; init; }
+}

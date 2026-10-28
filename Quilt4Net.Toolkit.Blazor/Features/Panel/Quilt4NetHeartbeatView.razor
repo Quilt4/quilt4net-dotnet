@@ -1,0 +1,123 @@
+@using Microsoft.Extensions.DependencyInjection
+@using Quilt4Net.Toolkit.Blazor.Framework
+@using Quilt4Net.Toolkit.Features.HeartbeatReporting
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+
+@* This instance's heartbeat (#144): what it tells Quilt4Net, when it last did and what came back,
+   and the metrics it reports (#175). Refreshes itself while open. *@
+
+@if (_status == null)
+{
+    <RadzenText TextStyle="TextStyle.Body2">Heartbeats are not set up. Call AddQuilt4NetHeartbeatReporting() during startup, with a key that has heartbeat:write.</RadzenText>
+}
+else if (!_status.Current.Enabled)
+{
+    <RadzenText TextStyle="TextStyle.Body2">Heartbeat reporting is switched off (Quilt4Net:HeartbeatReporting:Enabled).</RadzenText>
+}
+else
+{
+    var s = _status.Current;
+    var report = s.LastReport;
+    <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Wrap="FlexWrap.Wrap">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="8px">
+                    <RadzenBadge BadgeStyle="@(s.LastAttemptUtc == null ? BadgeStyle.Base : s.LastProblem == null ? BadgeStyle.Success : BadgeStyle.Danger)"
+                                 Text="@(s.LastAttemptUtc == null ? "Not sent yet" : s.LastProblem == null ? "Accepted" : s.LastStatusCode is { } code ? $"Refused ({code})" : "Not sent")" />
+                    <span>Last sent @PanelFormat.Ago(s.LastAttemptUtc) · next @PanelFormat.In(s.NextDueUtc) · every @PanelFormat.Span(s.Interval)</span>
+                </RadzenStack>
+                <RadzenButton Text="Send now" Icon="favorite" Size="ButtonSize.Small" Variant="Variant.Outlined" IsBusy="@_sending" Click="@SendNowAsync" />
+            </RadzenStack>
+            @if (s.LastProblem != null)
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Style="margin: 12px 0 0;">@s.LastProblem</RadzenAlert>
+            }
+            @if (!s.HasApiKey)
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Style="margin: 12px 0 0;">No API key is configured for heartbeats.</RadzenAlert>
+            }
+        </RadzenCard>
+
+        @if (report != null)
+        {
+            <RadzenCard>
+                <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">What it reports</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap">
+                    @Fact("Application", report.Application)
+                    @Fact("Environment", report.Environment)
+                    @Fact("Instance", report.Instance)
+                    @Fact("Version", report.Version)
+                    @Fact("Machine", report.MachineName)
+                    @Fact("System", report.OperatingSystem)
+                    @Fact("Runtime", report.Runtime)
+                    @Fact("Cores", report.ProcessorCount?.ToString())
+                    @Fact("Started", report.StartedUtc is { } started ? PanelFormat.Ago(started) : null)
+                </RadzenStack>
+                <RadzenText TextStyle="TextStyle.Caption" Style="display: block; margin-top: 12px;">Capabilities</RadzenText>
+                @if ((report.Capabilities ?? []).Length == 0)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2">None. A capability makes the instance one of a group Quilt4Net watches as one monitor.</RadzenText>
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="4px" Wrap="FlexWrap.Wrap">
+                        @foreach (var capability in report.Capabilities)
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@capability" />
+                        }
+                    </RadzenStack>
+                }
+            </RadzenCard>
+
+            <RadzenCard>
+                <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">Metrics</RadzenText>
+                @if ((report.Metrics ?? []).Length == 0)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2">None reported. Processor and memory use are reported by default; AddMetric and AddMetricProvider add the application's own.</RadzenText>
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap">
+                        @foreach (var metric in report.Metrics)
+                        {
+                            @Fact(metric.Name, PanelFormat.Metric(metric.Value, metric.Unit))
+                        }
+                    </RadzenStack>
+                }
+            </RadzenCard>
+        }
+    </RadzenStack>
+}
+
+@code {
+    private IHeartbeatStatus _status;
+    private bool _sending;
+    private System.Threading.Timer _timer;
+
+    protected override void OnInitialized()
+    {
+        _status = ServiceProvider.GetService<IHeartbeatStatus>();
+        if (_status != null) _timer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task SendNowAsync()
+    {
+        _sending = true;
+        try
+        {
+            await _status.SendNowAsync();
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private static RenderFragment Fact(string label, string value) => @<div>
+        <RadzenText TextStyle="TextStyle.Caption" Style="display: block;">@label</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body1">@(string.IsNullOrEmpty(value) ? "-" : value)</RadzenText>
+    </div>;
+
+    public void Dispose() => _timer?.Dispose();
+}

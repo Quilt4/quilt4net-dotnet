@@ -104,4 +104,14 @@ public class WhoAmIResponseTests
         result.Capabilities.Should().BeNull();
         (result.Capabilities?.HasScope("content:read") ?? true).Should().BeTrue();
     }
+
+    [Fact]
+    public void An_area_is_on_off_or_not_known_when_the_server_does_not_say()
+    {
+        var response = new WhoAmIResponse { Areas = ["Content", "Monitoring"] };
+
+        response.IsAreaOn("monitoring").Should().BeTrue();
+        response.IsAreaOn("Issues").Should().BeFalse();
+        new WhoAmIResponse().IsAreaOn("Content").Should().BeNull("an older server does not say, which is not the same as off");
+    }
 }

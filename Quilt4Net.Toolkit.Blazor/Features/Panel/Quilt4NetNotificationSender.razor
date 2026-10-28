@@ -1,0 +1,92 @@
+@using Microsoft.Extensions.DependencyInjection
+@using Quilt4Net.Toolkit.Features.Notification
+@inject IServiceProvider ServiceProvider
+
+@* Sends a notification to the team's phones, the way the application would (#144), to test the whole
+   path: the category, the push, each phone's setting for it. The category is picked from the team's
+   list (#147), or typed against a server that cannot list them. Never in the browser: the key it
+   needs, notification:write, would be public there. *@
+
+@if (_client == null)
+{
+    <RadzenText TextStyle="TextStyle.Body2">Notifications are not set up. Call AddQuilt4NetNotifications() during startup, with a key that has notification:write.</RadzenText>
+}
+else if (OperatingSystem.IsBrowser())
+{
+    <RadzenText TextStyle="TextStyle.Body2">Sending needs a server-hosted application: in the browser the key would be public.</RadzenText>
+}
+else
+{
+    <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
+        <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+            Sends a notification to the team's phones, as this application would. Each phone treats it by its category, with its Default for a category it has no setting for.
+        </RadzenText>
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.End" Wrap="FlexWrap.Wrap">
+            <RadzenFormField Text="Category">
+                @if (_categories != null)
+                {
+                    <RadzenDropDown TValue="string" Data="@_categories" @bind-Value="_category" AllowFiltering="true" FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive" Style="width: 170px;" />
+                }
+                else
+                {
+                    <RadzenTextBox Value="@_category" @oninput="@(e => _category = e.Value?.ToString())" MaxLength="100" Style="width: 170px;" />
+                }
+            </RadzenFormField>
+            <RadzenFormField Text="Message" Style="flex: 1 1 320px;">
+                @* Updated as typed, so Send enables without leaving the box first. *@
+                <RadzenTextBox Value="@_message" @oninput="@(e => _message = e.Value?.ToString())" MaxLength="4000" />
+            </RadzenFormField>
+            <RadzenButton Text="Send" Icon="send" IsBusy="@_sending" BusyText="Sending…" Disabled="@(string.IsNullOrWhiteSpace(_category) || string.IsNullOrWhiteSpace(_message))" Click="@SendAsync" />
+        </RadzenStack>
+        @if (_result != null)
+        {
+            <RadzenAlert AlertStyle="@_resultStyle" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Style="margin: 0;">@_result</RadzenAlert>
+        }
+    </RadzenStack>
+}
+
+@code {
+    private INotificationClient _client;
+    private string[] _categories;
+    private string _category = "info";
+    private string _message;
+    private bool _sending;
+    private string _result;
+    private AlertStyle _resultStyle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = ServiceProvider.GetService<INotificationClient>();
+        if (_client == null || OperatingSystem.IsBrowser()) return;
+
+        _categories = await _client.GetCategoriesAsync();
+        if (_categories is { Length: > 0 } && !_categories.Contains(_category)) _category = _categories[0];
+    }
+
+    private async Task SendAsync()
+    {
+        _sending = true;
+        try
+        {
+            var sent = await _client.SendAsync(_category, _message);
+            (_result, _resultStyle) = sent.Reached switch
+            {
+                0 => ($"Sent as {sent.Category}, but no phone is connected for the team, so nobody will hear it.", AlertStyle.Warning),
+                { } n => ($"Sent as {sent.Category} to {n} phone{(n == 1 ? "" : "s")}.", AlertStyle.Success),
+                null => ($"Sent as {sent.Category}.", AlertStyle.Success)
+            };
+        }
+        catch (NotificationClientException e)
+        {
+            (_result, _resultStyle) = (e.Message, AlertStyle.Danger);
+        }
+        catch (HttpRequestException e)
+        {
+            (_result, _resultStyle) = ($"Could not reach Quilt4Net: {e.Message}", AlertStyle.Danger);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+}

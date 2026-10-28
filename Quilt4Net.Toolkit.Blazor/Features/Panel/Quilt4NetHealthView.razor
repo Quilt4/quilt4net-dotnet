@@ -1,0 +1,102 @@
+@using Microsoft.Extensions.DependencyInjection
+@using Quilt4Net.Toolkit.Features.Health
+@inject IServiceProvider ServiceProvider
+
+@* The application's own health (#144): the components and hosted-service probes it registered,
+   checked in the process, as the component part of its /api/health. Not its dependencies, version,
+   metrics or certificate self-check, which that endpoint adds; no HTTP call is made. *@
+
+@if (_health == null)
+{
+    <RadzenText TextStyle="TextStyle.Body2">Health checks are not set up. Call AddQuilt4NetHealth() from Quilt4Net.Toolkit.Health during startup.</RadzenText>
+}
+else
+{
+    <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="8px">
+                @if (_components is { Count: 0 } && _problem == null)
+                {
+                    <span>No health checks are registered. Add them with AddComponent, AddDependency or AddComponentService in AddQuilt4NetHealth.</span>
+                }
+                else if (_components != null)
+                {
+                    var overall = _components.Count == 0 ? HealthStatus.Healthy : _components.Max(x => x.Value.Status);
+                    <RadzenBadge BadgeStyle="@Style(overall)" Text="@overall.ToString()" />
+                    <span>@_components.Count component@(_components.Count == 1 ? "" : "s")</span>
+                }
+            </RadzenStack>
+            <RadzenButton Text="Check again" Icon="refresh" Size="ButtonSize.Small" Variant="Variant.Outlined" IsBusy="@_checking" Click="@CheckAsync" />
+        </RadzenStack>
+        @if (_problem != null)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Style="margin: 0;">@_problem</RadzenAlert>
+        }
+        @if (_components is { Count: 0 })
+        {
+        }
+        else if (_components == null)
+        {
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+        }
+        else
+        {
+            <RadzenDataGrid Data="@_components" TItem="KeyValuePair<string, HealthComponent>" Density="Density.Compact">
+                <Columns>
+                    <RadzenDataGridColumn Title="Component" Width="240px">
+                        <Template><strong>@context.Key</strong></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Status" Width="120px">
+                        <Template><RadzenBadge BadgeStyle="@Style(context.Value.Status)" Text="@context.Value.Status.ToString()" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Details">
+                        <Template>
+                            <span style="white-space: normal;">@string.Join(" · ", (context.Value.Details ?? []).Select(d => $"{d.Key}: {d.Value}"))</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </RadzenStack>
+}
+
+@code {
+    private IHealthService _health;
+    private List<KeyValuePair<string, HealthComponent>> _components;
+    private bool _checking;
+    private string _problem;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _health = ServiceProvider.GetService<IHealthService>();
+        if (_health != null) await CheckAsync();
+    }
+
+    private async Task CheckAsync()
+    {
+        _checking = true;
+        try
+        {
+            var components = new List<KeyValuePair<string, HealthComponent>>();
+            await foreach (var component in _health.GetStatusAsync(includeProbes: true)) components.Add(component);
+            _components = components.OrderByDescending(x => x.Value.Status).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToList();
+            _problem = null;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _problem = $"The health check failed: {e.Message}";
+            _components ??= [];
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    private static BadgeStyle Style(HealthStatus status) => status switch
+    {
+        HealthStatus.Healthy => BadgeStyle.Success,
+        HealthStatus.Degraded => BadgeStyle.Warning,
+        _ => BadgeStyle.Danger
+    };
+}

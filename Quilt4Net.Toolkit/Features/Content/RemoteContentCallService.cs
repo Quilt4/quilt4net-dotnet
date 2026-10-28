@@ -36,6 +36,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
     private readonly ConcurrentDictionary<string, bool> _refreshInProgress = new();
     private readonly FailureBackoff _failureBackoff = new();
     private readonly ConcurrentDictionary<Guid, byte> _warmedLanguages = new();
+    private readonly ConcurrentDictionary<Guid, ContentWarmUp> _warmUps = new();
     private long _observedContentTtlTicks;
     private int _missingApiKeyWarned;
     private Language[] _languages;
@@ -409,6 +410,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
+                RecordWarmUp(languageKey, 0, "The server has no bulk content endpoint; values load one at a time.");
                 _logger.LogInformation("Content warm-up endpoint unavailable (404) for application '{Application}' in environment '{Environment}', language '{LanguageKey}'. Server predates bulk content; falling back to per-key fetching.",
                     effectiveApplication, _environmentName.Name, languageKey);
                 return;
@@ -431,6 +433,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                     return;
                 }
 
+                RecordWarmUp(languageKey, 0, "Rate limited by the server; left to the next reload.");
                 _logger.LogWarning("Content warm-up rate limited (429) for application '{Application}', language '{LanguageKey}'. Retry-After was {RetryAfter}; leaving it to the next periodic re-warm.",
                     effectiveApplication, languageKey, retryAfter?.ToString() ?? "absent");
                 return;
@@ -443,6 +446,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
                 // fetching, and no reason at all (#155). The success line above has always named
                 // them, so a failure naming nothing was the odd one out.
                 var body = await ReadErrorBodyAsync(response, cts.Token);
+                RecordWarmUp(languageKey, 0, $"{(int)response.StatusCode} {response.ReasonPhrase}. {body}".Trim());
                 _logger.LogWarning("Content warm-up failed for application '{Application}' in environment '{Environment}', language '{LanguageKey}'. Response was {StatusCode} {ReasonPhrase}. {Body}Falling back to per-key fetching.",
                     effectiveApplication, _environmentName.Name, languageKey, response.StatusCode, response.ReasonPhrase, body);
                 return;
@@ -479,6 +483,7 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
             // runtime — the user switching to Swedish — must keep being re-warmed, or it is exactly
             // the per-key fan-out this removes, just narrower.
             _warmedLanguages[languageKey] = 0;
+            RecordWarmUp(languageKey, result.Items.Length, null);
             if (ttl > TimeSpan.Zero) Interlocked.Exchange(ref _observedContentTtlTicks, ttl.Ticks);
 
             _logger.LogInformation("Content warm-up loaded {Count} item(s) in {Elapsed}ms for application '{Application}', language '{LanguageKey}'. ValidTo: {ValidTo}. Kept {Kept} newer cached value(s).",
@@ -486,11 +491,13 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
         }
         catch (OperationCanceledException)
         {
+            RecordWarmUp(languageKey, 0, $"Timed out after {_contentOptions.HttpTimeout.TotalSeconds:0.#} s.");
             _logger.LogWarning("Content warm-up timed out after {Timeout}ms for application '{Application}' in environment '{Environment}', language '{LanguageKey}'. Falling back to per-key fetching.",
                 _contentOptions.HttpTimeout.TotalMilliseconds, effectiveApplication, _environmentName.Name, languageKey);
         }
         catch (Exception e)
         {
+            RecordWarmUp(languageKey, 0, e.Message);
             _logger.LogError(e, "Content warm-up failed for application '{Application}' in environment '{Environment}', language '{LanguageKey}': {Message} Falling back to per-key fetching.",
                 effectiveApplication, _environmentName.Name, languageKey, e.Message);
         }
@@ -975,6 +982,38 @@ internal class RemoteContentCallService : IRemoteContentCallService, IDisposable
             counts[languageKey] = counts.GetValueOrDefault(languageKey) + 1;
         }
         return counts;
+    }
+
+    private void RecordWarmUp(Guid languageKey, int items, string problem)
+        => _warmUps[languageKey] = new ContentWarmUp(DateTime.UtcNow, problem == null, items, problem);
+
+    public IReadOnlyList<ContentCacheLanguageStatus> GetCacheStatus()
+    {
+        var entries = GetCachedEntries();
+        return entries.GroupBy(x => x.LanguageKey).Select(g => g.Key).Union(_warmUps.Keys)
+            .Select(language =>
+            {
+                var held = entries.Where(x => x.LanguageKey == language).ToArray();
+                return new ContentCacheLanguageStatus(language, held.Length, held.Count(x => x.IsDefault),
+                    held.Length == 0 ? null : held.Min(x => x.ValidTo), _warmUps.GetValueOrDefault(language));
+            })
+            .ToArray();
+    }
+
+    public IReadOnlyList<ContentCacheEntry> GetCachedEntries(Guid? languageKey = null)
+    {
+        var result = new List<ContentCacheEntry>();
+        foreach (var (cacheKey, cached) in _localCache)
+        {
+            // BuildCacheKey's shape: "{key}_{languageKey}|{application}".
+            if (!TryParseLanguageFromCacheKey(cacheKey, out var language)) continue;
+            if (languageKey != null && language != languageKey) continue;
+            var pipe = cacheKey.LastIndexOf('|');
+            var key = cacheKey[..Math.Max(0, pipe - 37)];
+            var reason = cached.FallbackReason is ContentFallbackReason.Unknown or ContentFallbackReason.None ? null : cached.FallbackReason.ToString();
+            result.Add(new ContentCacheEntry(key, cacheKey[(pipe + 1)..], language, cached.Value, cached.ValidTo, cached.IsDefault, reason));
+        }
+        return result;
     }
 
     // Reverse of BuildCacheKey: the language key is the 36-char GUID immediately before the '|'

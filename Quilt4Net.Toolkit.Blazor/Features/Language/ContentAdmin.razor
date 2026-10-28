@@ -1,3 +1,5 @@
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Hosting
 @using Quilt4Net.Toolkit.Blazor.Framework
 @using Quilt4Net.Toolkit.Features.Content
 @using Quilt4Net.Toolkit.Framework
@@ -6,81 +8,168 @@
 @inject IEditContentService EditContentService
 @inject IContentAdminService ContentAdminService
 @inject IRemoteContentCallService RemoteContentCallService
+@inject IServiceProvider ServiceProvider
 @inject NavigationManager NavigationManager
+
+@* The application's content, for whoever looks after it (#144): the switches that change how text
+   shows, which language is used, what the cache holds per language and when it reloads, and a search
+   of the cached values with where each came from. Editing switches are for content admins. *@
 
 <ConnectionWrapper Service="Service.Content">
     <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
-        @if (_isAdmin)
-        {
-            <RadzenRow>
-                <RadzenColumn>
-                    <RadzenText Text="Edit mode" TextStyle="TextStyle.Caption"/>
-                    <div><RadzenSwitch @bind-value="EditContentService.Enabled"/></div>
-                </RadzenColumn>
-                <RadzenColumn title="Adds the language 'x' so that content not managed by Quilt4Net can be found.">
-                    <RadzenText Text="Developer mode" TextStyle="TextStyle.Caption"/>
-                    <div><RadzenSwitch @bind-value="LanguageStateService.DeveloperMode"/></div>
-                </RadzenColumn>
-            </RadzenRow>
-        }
-        <RadzenRow>
-            <RadzenColumn>
-                <StandardButton Text="Reload Content" Icon="bolt" Click="ReloadContent"/>
-            </RadzenColumn>
-        </RadzenRow>
-        @if (_isAdmin)
-        {
-            <RadzenRow>
-                <RadzenColumn>
-                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                        <RadzenText Text="Loaded content per language" TextStyle="TextStyle.Caption"/>
-                        <StandardButton Text="Refresh" Icon="refresh" Click="RefreshCounts"/>
-                    </RadzenStack>
-                    @if (_loaded.Count == 0)
-                    {
-                        <RadzenText Text="Nothing cached yet." TextStyle="TextStyle.Body2"/>
-                    }
-                    else
-                    {
-                        @foreach (var row in _loaded)
-                        {
-                            <RadzenText Text="@($"{row.Name}: {row.Count}")" TextStyle="TextStyle.Body2"/>
-                        }
-                    }
-                </RadzenColumn>
-            </RadzenRow>
-        }
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap" AlignItems="AlignItems.End">
+                @if (_isAdmin)
+                {
+                    <div title="Edit text where it shows: each text gets an edit button.">
+                        <RadzenText Text="Edit mode" TextStyle="TextStyle.Caption" Style="display: block;" />
+                        <RadzenSwitch @bind-value="EditContentService.Enabled" />
+                    </div>
+                }
+                @if (_source != null)
+                {
+                    <div title="Marks each text with where it came from: the server, the cache, a stale cache or the default in code.">
+                        <RadzenText Text="Show where text comes from" TextStyle="TextStyle.Caption" Style="display: block;" />
+                        <RadzenSwitch @bind-value="_source.Enabled" />
+                    </div>
+                }
+                @if (_isAdmin)
+                {
+                    <div title="Adds the language 'x' so that content not managed by Quilt4Net can be found.">
+                        <RadzenText Text="Developer mode" TextStyle="TextStyle.Caption" Style="display: block;" />
+                        <RadzenSwitch @bind-value="LanguageStateService.DeveloperMode" />
+                    </div>
+                }
+                <div>
+                    <RadzenText Text="Language" TextStyle="TextStyle.Caption" Style="display: block;" />
+                    <LanguageSelector />
+                </div>
+                <div>
+                    <RadzenText Text="Reads as" TextStyle="TextStyle.Caption" Style="display: block;" />
+                    <RadzenText TextStyle="TextStyle.Body1">@_application · @(_environment ?? "-")</RadzenText>
+                </div>
+                <StandardButton Text="Reload content" Icon="bolt" Click="ReloadContent" />
+            </RadzenStack>
+        </RadzenCard>
+
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween">
+                <RadzenText TextStyle="TextStyle.H6" Style="margin: 0;">Loaded content</RadzenText>
+                <StandardButton Text="Refresh" Icon="refresh" Click="Refresh" />
+            </RadzenStack>
+            @if (_languages.Count == 0)
+            {
+                <RadzenText Text="Nothing cached yet." TextStyle="TextStyle.Body2" />
+            }
+            else
+            {
+                <RadzenDataGrid Data="@_languages" TItem="ContentCacheLanguageStatus" Density="Density.Compact" Style="margin-top: 8px;">
+                    <Columns>
+                        <RadzenDataGridColumn Title="Language">
+                            <Template><strong>@NameOf(context.LanguageKey)</strong></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Values" Width="90px" TextAlign="TextAlign.Right">
+                            <Template>@context.Count</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Defaults" Width="90px" TextAlign="TextAlign.Right">
+                            <Template><span title="Values the server has not confirmed; the default in code shows.">@context.Defaults</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Reloads" Width="110px">
+                            <Template>@PanelFormat.In(context.FreshUntil)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Last bulk load">
+                            <Template>
+                                @if (context.LastWarmUp is not { } warm)
+                                {
+                                    <span style="color: var(--rz-text-secondary-color);">Not loaded in bulk</span>
+                                }
+                                else if (warm.Succeeded)
+                                {
+                                    <span>@PanelFormat.Ago(warm.Utc), @warm.Items values</span>
+                                }
+                                else
+                                {
+                                    <span style="white-space: normal; color: var(--rz-warning);">@PanelFormat.Ago(warm.Utc): @warm.Problem</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        </RadzenCard>
+
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">Find a text</RadzenText>
+            <RadzenTextBox Value="@_search" @oninput="@(e => _search = e.Value?.ToString())" Placeholder="Key or text" Style="width: 100%; max-width: 420px;" />
+            @if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var found = Find();
+                <RadzenText TextStyle="TextStyle.Caption" Style="display: block; margin: 8px 0 4px;">@(found.Count >= MaxFound ? $"The first {MaxFound}" : $"{found.Count} found")</RadzenText>
+                <RadzenDataGrid Data="@found" TItem="ContentCacheEntry" Density="Density.Compact">
+                    <Columns>
+                        <RadzenDataGridColumn Title="Key" Width="260px">
+                            <Template><span style="white-space: normal;">@context.Key</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Language" Width="110px">
+                            <Template>@NameOf(context.LanguageKey)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="Text">
+                            <Template><span style="white-space: normal;">@PanelFormat.Clip(context.Value)</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn Title="From" Width="150px">
+                            <Template>
+                                <RadzenBadge BadgeStyle="@(context.IsDefault ? BadgeStyle.Warning : context.FallbackReason != null ? BadgeStyle.Info : BadgeStyle.Success)"
+                                             Text="@(context.IsDefault ? "Default in code" : context.FallbackReason ?? "Server")" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        </RadzenCard>
     </RadzenStack>
 </ConnectionWrapper>
 
 @code {
+    private const int MaxFound = 50;
+
     private bool _isAdmin;
-    private List<(string Name, int Count)> _loaded = [];
+    private IContentSourceService _source;
+    private IReadOnlyList<ContentCacheLanguageStatus> _languages = [];
+    private string _search;
+    private string _application;
+    private string _environment;
 
     protected override async Task OnInitializedAsync()
     {
         _isAdmin = await ContentAdminService.IsContentAdminAsync();
-        await RefreshCounts();
+        // Resolved, not injected: a host can register content without the source overlay.
+        _source = ServiceProvider.GetService<IContentSourceService>();
+        _application = ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<ContentOptions>>()?.Value?.Application ?? System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
+        _environment = ServiceProvider.GetService<IHostEnvironment>()?.EnvironmentName;
+        await Refresh();
     }
 
-    private Task RefreshCounts()
+    private Task Refresh()
     {
-        var counts = RemoteContentCallService.GetCacheCountsByLanguage();
-        var languages = LanguageStateService.Languages ?? [];
-
-        string NameOf(Guid key)
-        {
-            var name = languages.FirstOrDefault(l => l.Key == key)?.Name;
-            if (!string.IsNullOrEmpty(name)) return name;
-            return key == Guid.Empty ? "Default" : key.ToString();
-        }
-
-        _loaded = counts
-            .Select(c => (Name: NameOf(c.Key), Count: c.Value))
-            .OrderByDescending(x => x.Count)
-            .ToList();
-
+        _languages = RemoteContentCallService.GetCacheStatus().OrderByDescending(x => x.Count).ToList();
         return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<ContentCacheEntry> Find()
+    {
+        var text = _search.Trim();
+        return RemoteContentCallService.GetCachedEntries()
+            .Where(x => x.Key.Contains(text, StringComparison.OrdinalIgnoreCase) || (x.Value ?? "").Contains(text, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxFound)
+            .ToList();
+    }
+
+    private string NameOf(Guid key)
+    {
+        var name = (LanguageStateService.Languages ?? []).FirstOrDefault(l => l.Key == key)?.Name;
+        if (!string.IsNullOrEmpty(name)) return name;
+        return key == Guid.Empty ? "Default" : key.ToString();
     }
 
     private async Task ReloadContent()
