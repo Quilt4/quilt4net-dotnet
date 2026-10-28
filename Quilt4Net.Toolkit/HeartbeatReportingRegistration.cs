@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Quilt4Net.Toolkit.Features.HeartbeatReporting;
@@ -44,6 +45,7 @@ public static class HeartbeatReportingRegistration
         // Validated after the callback, for the same reason as AddQuilt4NetIssues.
         if (!Uri.TryCreate(o.Quilt4NetAddress, UriKind.Absolute, out _)) throw new InvalidOperationException($"Configuration {nameof(o.Quilt4NetAddress)} with value '{o.Quilt4NetAddress}' cannot be parsed to an absolute uri.");
         if (o.Interval <= TimeSpan.Zero) throw new InvalidOperationException($"Configuration {nameof(o.Interval)} must be positive.");
+        if (o.MetricTimeout <= TimeSpan.Zero) throw new InvalidOperationException($"Configuration {nameof(o.MetricTimeout)} must be positive.");
 
         services.AddSingleton(Options.Create(o));
 
@@ -63,6 +65,13 @@ public static class HeartbeatReportingRegistration
                 }
             })
             .AddQuilt4NetCorrelationId();
+
+        // Scoped, and resolved in a scope per heartbeat, so a provider can take a scoped service such as
+        // a database context. A provider registered directly as IHeartbeatMetricProvider is used too.
+        foreach (var provider in o.MetricProviders)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IHeartbeatMetricProvider), provider));
+        }
 
         services.AddHostedService<HeartbeatReporter>();
     }

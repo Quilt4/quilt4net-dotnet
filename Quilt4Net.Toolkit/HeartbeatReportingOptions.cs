@@ -67,6 +67,29 @@ public record HeartbeatReportingOptions
     /// </summary>
     public MemoryMetric Memory { get; set; } = MemoryMetric.Process;
 
+    /// <summary>
+    /// How long the application's own metrics may take at each heartbeat, every
+    /// <see cref="IHeartbeatMetricProvider"/> and <see cref="AddMetric(string, Func{double}, string)"/> at
+    /// once. Default is 10 seconds. One that is later is left out of that heartbeat.
+    /// </summary>
+    public TimeSpan MetricTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    private readonly List<Type> _metricProviders = [];
+
+    /// <summary>The providers added with <see cref="AddMetricProvider{T}"/>, registered by the reporting registration.</summary>
+    internal IReadOnlyList<Type> MetricProviders => _metricProviders;
+
+    /// <summary>
+    /// Adds a service that supplies metrics to every heartbeat, resolved from dependency injection so it
+    /// can take any other service in its constructor. See <see cref="IHeartbeatMetricProvider"/>.
+    /// </summary>
+    /// <typeparam name="T">The provider. Registered scoped; one is resolved per heartbeat.</typeparam>
+    public HeartbeatReportingOptions AddMetricProvider<T>() where T : class, IHeartbeatMetricProvider
+    {
+        if (!_metricProviders.Contains(typeof(T))) _metricProviders.Add(typeof(T));
+        return this;
+    }
+
     /// <summary>The most metrics of the application's own: with the four built-in ones, Quilt4Net takes at most 20.</summary>
     public const int MaxCustomMetrics = 16;
 

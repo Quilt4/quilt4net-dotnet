@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,13 +27,13 @@ internal class HeartbeatReporter : BackgroundService
     private readonly ILogger<HeartbeatReporter> _logger;
     private readonly HeartbeatMetricReader _metrics;
 
-    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null)
+    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null, IServiceScopeFactory scopeFactory = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
-        _metrics = new HeartbeatMetricReader(_options, logger);
+        _metrics = new HeartbeatMetricReader(_options, logger, scopeFactory);
     }
 
     private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromHours(1);

@@ -534,8 +534,27 @@ builder.AddQuilt4NetHeartbeatReporting(o =>
 });
 ```
 
-A metric that throws or is not a finite number is logged and left out of that heartbeat; the heartbeat
-itself is always sent. Names are unique and at most 64 characters, and at most 16 are your own.
+For values that need other services, implement `IHeartbeatMetricProvider`. It is resolved from
+dependency injection in a scope of its own at each heartbeat, so it can take anything in its
+constructor, a database context included:
+
+```csharp
+public class OrderQueueMetrics(IOrderQueueClient queue) : IHeartbeatMetricProvider
+{
+    public async Task<IEnumerable<HeartbeatMetric>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        var status = await queue.GetStatusAsync(cancellationToken);
+        return [new("queue.length", status.Length, "items"), new("queue.oldest", status.OldestAge.TotalSeconds, "s")];
+    }
+}
+
+builder.AddQuilt4NetHeartbeatReporting(o => o.AddMetricProvider<OrderQueueMetrics>());
+```
+
+Every provider and every `AddMetric` value is read at the same time, sharing `MetricTimeout` (10 seconds
+by default); pass the token on to the calls you make. One that throws, is late, is not a finite number,
+or repeats a name already sent is logged and left out of that heartbeat; the heartbeat itself is always
+sent. Names are at most 64 characters, and a heartbeat carries at most 20 metrics.
 
 ### HeartbeatReportingOptions
 
@@ -553,6 +572,7 @@ Bound from `Quilt4Net:HeartbeatReporting`, falling back to `Quilt4Net:ApiKey` an
 | `Instance` | machine name | Tells two copies of the application apart. |
 | `Cpu` | `Process` | Which processor use to report: `None`, `Process`, `Machine` or `Both`. |
 | `Memory` | `Process` | Which memory use to report: `None`, `Process`, `Machine` or `Both`. |
+| `MetricTimeout` | 10 seconds | How long the application's own metrics may take at each heartbeat, all at once. |
 
 ## Health check client
 
