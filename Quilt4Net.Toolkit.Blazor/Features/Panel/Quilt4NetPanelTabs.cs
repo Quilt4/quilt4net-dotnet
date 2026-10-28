@@ -29,7 +29,7 @@ public enum Quilt4NetPanelTabs
     /// <summary>Send a notification to the team's phones.</summary>
     Notifications = 16,
 
-    /// <summary>The application's own health checks.</summary>
+    /// <summary>The application's registered health components and hosted-service probes, checked in the process.</summary>
     Health = 32,
 
     All = Connection | Content | Configuration | Heartbeat | Notifications | Health

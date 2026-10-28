@@ -866,7 +866,7 @@ The dropdown is not rendered at all when every entry is shared, since there woul
 | Configuration | `RemoteConfigurationAdmin` | See [Remote configuration](#remote-configuration). |
 | Heartbeat | `Quilt4NetHeartbeatView` | What this instance reports (application, environment, version, machine, capabilities, metrics), when it last sent, what the server answered, and **Send now**. |
 | Send notification | `Quilt4NetNotificationSender` | Sends a notification to the team's phones with a category from the team's list, and says how many phones it reached. |
-| Health | `Quilt4NetHealthView` | The application's own health checks, as its health endpoints answer them. |
+| Health | `Quilt4NetHealthView` | The components and hosted-service probes the application registered with `AddQuilt4NetHealth`, checked in the process. No HTTP call; not the dependencies, version, metrics or certificate self-check that `/api/health` adds. |
 
 A tab shows only when the application registered its feature (`AddQuilt4NetBlazorContent`,
 `AddQuilt4NetRemoteConfiguration`, `AddQuilt4NetHeartbeatReporting`, `AddQuilt4NetNotifications`,

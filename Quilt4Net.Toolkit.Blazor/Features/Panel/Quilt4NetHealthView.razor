@@ -2,8 +2,9 @@
 @using Quilt4Net.Toolkit.Features.Health
 @inject IServiceProvider ServiceProvider
 
-@* The application's own health (#144), checked in the process the way its health endpoints answer:
-   every component and dependency, with the hosted-service probes and certificate checks. *@
+@* The application's own health (#144): the components and hosted-service probes it registered,
+   checked in the process, as the component part of its /api/health. Not its dependencies, version,
+   metrics or certificate self-check, which that endpoint adds; no HTTP call is made. *@
 
 @if (_health == null)
 {
