@@ -1,0 +1,79 @@
+@using Quilt4Net.Toolkit.Blazor.Features.Configuration
+@using Quilt4Net.Toolkit.Blazor.Features.Language
+@using Quilt4Net.Toolkit.Blazor.Framework
+@inject IServiceProvider ServiceProvider
+
+@* Quilt4Net in one place for a consumer application (#144): a tab per service the host registered.
+   A tab is hidden when the host did not register its service, the team has its area switched off,
+   or the key is known to lack its scope. Who may open the panel is the host's to decide: put it
+   behind the application's own role or policy. Each tab is also a component of its own. *@
+
+@if (_checks == null)
+{
+    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+}
+else
+{
+    <RadzenTabs @bind-SelectedIndex="_selected">
+        <Tabs>
+            @if (Shows(Quilt4NetPanelTabs.Connection))
+            {
+                <RadzenTabsItem Text="Connection" Icon="hub">
+                    <Quilt4NetConnectionView Checks="@_checks" />
+                </RadzenTabsItem>
+            }
+            @if (Shows(Quilt4NetPanelTabs.Content))
+            {
+                <RadzenTabsItem Text="Content" Icon="translate">
+                    <ContentAdmin />
+                </RadzenTabsItem>
+            }
+            @if (Shows(Quilt4NetPanelTabs.Configuration))
+            {
+                <RadzenTabsItem Text="Configuration" Icon="toggle_on">
+                    <RemoteConfigurationAdmin />
+                </RadzenTabsItem>
+            }
+            @if (Shows(Quilt4NetPanelTabs.Heartbeat))
+            {
+                <RadzenTabsItem Text="Heartbeat" Icon="favorite">
+                    <Quilt4NetHeartbeatView />
+                </RadzenTabsItem>
+            }
+            @if (Shows(Quilt4NetPanelTabs.Notifications))
+            {
+                <RadzenTabsItem Text="Send notification" Icon="notifications">
+                    <Quilt4NetNotificationSender />
+                </RadzenTabsItem>
+            }
+            @if (Shows(Quilt4NetPanelTabs.Health))
+            {
+                <RadzenTabsItem Text="Health" Icon="monitor_heart">
+                    <Quilt4NetHealthView />
+                </RadzenTabsItem>
+            }
+        </Tabs>
+    </RadzenTabs>
+}
+
+@code {
+    /// <summary>The tabs the panel may show; each still needs its service, its area and its scope. Default: all.</summary>
+    [Parameter] public Quilt4NetPanelTabs Tabs { get; set; } = Quilt4NetPanelTabs.All;
+
+    /// <summary>The tab open first.</summary>
+    [Parameter] public Quilt4NetPanelTabs SelectedTab { get; set; } = Quilt4NetPanelTabs.Connection;
+
+    private IReadOnlyList<Quilt4NetEndpointCheck> _checks;
+    private Quilt4NetPanelTabs _visible;
+    private int _selected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _checks = await Quilt4NetEndpoints.CheckAsync(ServiceProvider, Quilt4NetEndpoints.Registered(ServiceProvider));
+        _visible = Quilt4NetPanelVisibility.Visible(ServiceProvider, _checks, Tabs, OperatingSystem.IsBrowser());
+        var order = Enum.GetValues<Quilt4NetPanelTabs>().Where(x => x is not Quilt4NetPanelTabs.None and not Quilt4NetPanelTabs.All && _visible.HasFlag(x)).ToList();
+        _selected = Math.Max(0, order.IndexOf(SelectedTab));
+    }
+
+    private bool Shows(Quilt4NetPanelTabs tab) => _visible.HasFlag(tab);
+}

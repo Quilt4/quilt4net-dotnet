@@ -1,0 +1,184 @@
+@using System.Reflection
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Hosting
+@using Quilt4Net.Toolkit.Blazor.Framework
+@using Quilt4Net.Toolkit.Features.Content
+@inject IServiceProvider ServiceProvider
+
+@* How this application reaches Quilt4Net (#144): what it is, each Quilt4Net feature it registered with
+   the address it calls and what that answers, the team's areas, and how changes reach it - the live
+   link. Each feature has its own address and key, so a wrong key shows on the feature that uses it. *@
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">This application</RadzenText>
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap">
+            @Fact("Application", _application)
+            @Fact("Environment", _environment)
+            @Fact("Version", _version)
+            @Fact("Quilt4Net Toolkit", _toolkitVersion)
+        </RadzenStack>
+    </RadzenCard>
+
+    <RadzenCard>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween">
+            <RadzenText TextStyle="TextStyle.H6" Style="margin: 0;">Quilt4Net</RadzenText>
+            <RadzenButton Text="Check again" Icon="refresh" Size="ButtonSize.Small" Variant="Variant.Outlined" IsBusy="@_checking" Click="@CheckAsync" />
+        </RadzenStack>
+        @if (_checks == null)
+        {
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+        }
+        else if (_checks.Count == 0)
+        {
+            <RadzenText TextStyle="TextStyle.Body2">No Quilt4Net feature is registered. Call AddQuilt4NetContent(), AddQuilt4NetRemoteConfiguration(), AddQuilt4NetHeartbeatReporting() or AddQuilt4NetNotifications() during startup.</RadzenText>
+        }
+        else
+        {
+            <RadzenDataGrid Data="@_checks" TItem="Quilt4NetEndpointCheck" Density="Density.Compact" Style="margin-top: 8px;">
+                <Columns>
+                    <RadzenDataGridColumn Title="Feature" Width="130px">
+                        <Template><strong>@context.Endpoint.Feature</strong></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="State" Width="150px">
+                        <Template><RadzenBadge BadgeStyle="@StateStyle(context)" Text="@State(context)" title="@context.Problem" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Address">
+                        <Template><span style="white-space: normal;">@context.Endpoint.Address</span></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Team">
+                        <Template>
+                            @if (context.WhoAmI != null)
+                            {
+                                <span title="@string.Join(", ", context.WhoAmI.Scopes ?? [])">@context.WhoAmI.TeamName · @context.WhoAmI.AccessLevel · @((context.WhoAmI.Scopes ?? []).Length) scopes</span>
+                            }
+                            else if (context.Problem != null)
+                            {
+                                <span style="white-space: normal; color: var(--rz-text-secondary-color);">@context.Problem</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Answer" Width="90px" TextAlign="TextAlign.Right">
+                        <Template>@(context.Milliseconds is { } ms ? $"{ms} ms" : "")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn Title="Server" Width="110px">
+                        <Template>@context.ServerVersion</Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            <RadzenText TextStyle="TextStyle.Caption" Style="display: block; margin-top: 12px;">Areas on for the team</RadzenText>
+            @if (Quilt4NetEndpoints.Areas(_checks) is { } areas)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="4px" Wrap="FlexWrap.Wrap">
+                    @foreach (var area in areas)
+                    {
+                        <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="@area" />
+                    }
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2">The server does not say. Every tab is shown.</RadzenText>
+            }
+        }
+    </RadzenCard>
+
+    <RadzenCard>
+        <RadzenText TextStyle="TextStyle.H6" Style="margin-top: 0;">Live link</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">How changes made on Quilt4Net reach this application.</RadzenText>
+        <RadzenStack Orientation="Orientation.Vertical" Gap="6px" Style="margin-top: 8px;">
+            <div>
+                <RadzenBadge BadgeStyle="BadgeStyle.Base" Text="Not connected" />
+                <strong style="margin-left: 6px;">SignalR push</strong> - not available in this Toolkit version. Changes arrive when a value's lifetime runs out.
+            </div>
+            @if (_content != null)
+            {
+                var languages = _content.GetCacheStatus();
+                var failed = languages.Where(x => x.LastWarmUp is { Succeeded: false }).ToArray();
+                <div>
+                    <RadzenBadge BadgeStyle="@(failed.Length > 0 ? BadgeStyle.Warning : languages.Count > 0 ? BadgeStyle.Success : BadgeStyle.Base)" Text="@(failed.Length > 0 ? "Failing" : languages.Count > 0 ? "Loaded" : "Not loaded")" />
+                    <strong style="margin-left: 6px;">Content</strong> - loaded in bulk per language over HTTP:
+                    @if (languages.Count == 0)
+                    {
+                        <span> nothing loaded yet.</span>
+                    }
+                    else
+                    {
+                        <span> @languages.Count language@(languages.Count == 1 ? "" : "s"), @languages.Sum(x => x.Count) values, next reload @PanelFormat.In(languages.Where(x => x.FreshUntil != null).Min(x => x.FreshUntil)).</span>
+                    }
+                    @foreach (var language in failed)
+                    {
+                        <div style="color: var(--rz-warning); margin-left: 8px;">@language.LastWarmUp.Problem</div>
+                    }
+                </div>
+            }
+            @if (_configuration)
+            {
+                <div>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="On read" />
+                    <strong style="margin-left: 6px;">Configuration</strong> - each value is read when it is first used and kept for its lifetime.
+                </div>
+            }
+        </RadzenStack>
+    </RadzenCard>
+</RadzenStack>
+
+@code {
+    /// <summary>Checks already made, by the panel that holds this tab; without them the view makes its own.</summary>
+    [Parameter] public IReadOnlyList<Quilt4NetEndpointCheck> Checks { get; set; }
+
+    private IReadOnlyList<Quilt4NetEndpointCheck> _checks;
+    private bool _checking;
+    private IRemoteContentCallService _content;
+    private bool _configuration;
+    private string _application;
+    private string _environment;
+    private string _version;
+    private string _toolkitVersion;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var entry = Assembly.GetEntryAssembly()?.GetName();
+        _application = ServiceProvider.GetService<Microsoft.Extensions.Options.IOptions<ContentOptions>>()?.Value?.Application ?? entry?.Name;
+        _environment = ServiceProvider.GetService<IHostEnvironment>()?.EnvironmentName;
+        _version = entry?.Version?.ToString();
+        _toolkitVersion = typeof(IRemoteContentCallService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0];
+        _content = ServiceProvider.GetService<IRemoteContentCallService>();
+        _configuration = ServiceProvider.GetService<Quilt4Net.Toolkit.Features.FeatureToggle.IRemoteConfigurationService>() != null;
+
+        if (Checks != null) _checks = Checks;
+        else await CheckAsync();
+    }
+
+    private async Task CheckAsync()
+    {
+        _checking = true;
+        try
+        {
+            _checks = await Quilt4NetEndpoints.CheckAsync(ServiceProvider, Quilt4NetEndpoints.Registered(ServiceProvider));
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    private static string State(Quilt4NetEndpointCheck c) => c switch
+    {
+        { WhoAmI: not null } => "Connected",
+        { Endpoint.ApiKey: null or "" } => "No key",
+        { Reached: false } => "Unreachable",
+        { StatusCode: 401 } => "Key not accepted",
+        { StatusCode: 403 } => "Refused",
+        { StatusCode: { } code } => $"Answered {code}",
+        _ => "Unknown"
+    };
+
+    private static BadgeStyle StateStyle(Quilt4NetEndpointCheck c) => c.WhoAmI != null ? BadgeStyle.Success : c.Reached ? BadgeStyle.Warning : BadgeStyle.Danger;
+
+    private static RenderFragment Fact(string label, string value) => @<div>
+        <RadzenText TextStyle="TextStyle.Caption" Style="display: block;">@label</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body1">@(string.IsNullOrEmpty(value) ? "-" : value)</RadzenText>
+    </div>;
+}

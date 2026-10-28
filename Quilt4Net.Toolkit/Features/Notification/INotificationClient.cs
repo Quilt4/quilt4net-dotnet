@@ -25,4 +25,11 @@ public interface INotificationClient
     /// <returns>The notification as the server stored it.</returns>
     /// <exception cref="NotificationClientException">The server refused or failed the call.</exception>
     Task<NotificationResponse> SendAsync(SendNotificationRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The team's notification categories, to pick from (#147). Null when the server cannot list them: one
+    /// from before #147, or a key without <c>notification:read</c>. Any category can still be sent; one the
+    /// team does not have is added. A default implementation keeps implementers building.
+    /// </summary>
+    Task<string[]> GetCategoriesAsync(CancellationToken cancellationToken = default) => Task.FromResult<string[]>(null);
 }

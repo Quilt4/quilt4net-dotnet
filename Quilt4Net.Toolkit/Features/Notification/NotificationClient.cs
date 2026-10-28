@@ -52,4 +52,22 @@ internal class NotificationClient : INotificationClient
 
         return await response.Content.ReadFromJsonAsync<NotificationResponse>(JsonOptions, cancellationToken);
     }
+
+    public async Task<string[]> GetCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.GetAsync("Api/Monitoring/categories", cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+            var categories = await response.Content.ReadFromJsonAsync<CategoryItem[]>(JsonOptions, cancellationToken);
+            return categories?.Select(x => x.Name).Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+        }
+        catch (Exception e) when (e is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private sealed record CategoryItem(string Name);
 }

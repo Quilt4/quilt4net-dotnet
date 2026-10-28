@@ -198,6 +198,33 @@ public class HeartbeatReporterTests
         act.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public async Task The_status_keeps_what_was_sent_and_what_came_back()
+    {
+        var options = new HeartbeatReportingOptions { Capabilities = ["import"], Application = "Worker", ApiKey = "key" };
+        var status = new HeartbeatStatus(options);
+        var answer = HttpStatusCode.NoContent;
+        var sut = new HeartbeatReporter(new StubHttpClientFactory(new RecordingHandler(_ => new HttpResponseMessage(answer)
+            {
+                Content = new StringContent("""{ "detail": "Monitoring is switched off for the team." }""")
+            })),
+            Options.Create(options), NullLogger<HeartbeatReporter>.Instance, status: status);
+
+        (await status.SendNowAsync(TestContext.Current.CancellationToken)).Should().BeTrue("the status sends through the reporter (#144)");
+        var accepted = status.Current;
+        accepted.LastReport.Capabilities.Should().Equal("import");
+        accepted.LastAcceptedUtc.Should().NotBeNull();
+        accepted.LastProblem.Should().BeNull();
+        accepted.HasApiKey.Should().BeTrue();
+
+        answer = HttpStatusCode.Forbidden;
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        status.Current.LastStatusCode.Should().Be(403);
+        status.Current.LastProblem.Should().Be("Monitoring is switched off for the team.");
+        status.Current.LastAcceptedUtc.Should().Be(accepted.LastAcceptedUtc, "the last accepted one is still the one before");
+    }
+
     private static Dictionary<string, (double Value, string Unit)> Metrics(RecordingHandler handler) =>
         JsonDocument.Parse(handler.LastBody).RootElement.GetProperty("metrics").EnumerateArray()
             .ToDictionary(

@@ -48,6 +48,9 @@ public static class HeartbeatReportingRegistration
         if (o.MetricTimeout <= TimeSpan.Zero) throw new InvalidOperationException($"Configuration {nameof(o.MetricTimeout)} must be positive.");
 
         services.AddSingleton(Options.Create(o));
+        // Registered also when switched off, so a status page can say so (#144).
+        services.AddSingleton<HeartbeatStatus>(_ => new HeartbeatStatus(o));
+        services.AddSingleton<IHeartbeatStatus>(sp => sp.GetRequiredService<HeartbeatStatus>());
 
         // Switched off: the options stay readable, but nothing reports and no HTTP client is set up.
         if (!o.Enabled) return;

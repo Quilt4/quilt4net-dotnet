@@ -26,14 +26,18 @@ internal class HeartbeatReporter : BackgroundService
     private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<HeartbeatReporter> _logger;
     private readonly HeartbeatMetricReader _metrics;
+    private readonly HeartbeatStatus _status;
 
-    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null, IServiceScopeFactory scopeFactory = null)
+    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null, IServiceScopeFactory scopeFactory = null,
+        HeartbeatStatus status = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
         _metrics = new HeartbeatMetricReader(_options, logger, scopeFactory);
+        _status = status;
+        if (_status != null) _status.Sender = ReportOnceAsync;
     }
 
     private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromHours(1);
@@ -45,6 +49,8 @@ internal class HeartbeatReporter : BackgroundService
         {
             await ReportOnceAsync(stoppingToken);
 
+            var next = DateTime.UtcNow.Add(_options.Interval);
+            _status?.Update(s => s with { NextDueUtc = next });
             try { await Task.Delay(_options.Interval, stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
@@ -57,10 +63,18 @@ internal class HeartbeatReporter : BackgroundService
         {
             // Read at each heartbeat, so the heartbeat's interval is the metrics' frequency too.
             var report = BuildReport() with { Metrics = await _metrics.ReadAsync(cancellationToken) };
+            var attempt = DateTime.UtcNow;
+            _status?.Update(s => s with { LastReport = report, LastAttemptUtc = attempt });
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.PostAsJsonAsync(Root, report, cancellationToken);
-            if (response.IsSuccessStatusCode) return true;
+            if (response.IsSuccessStatusCode)
+            {
+                _status?.Update(s => s with { LastAcceptedUtc = attempt, LastStatusCode = (int)response.StatusCode, LastProblem = null });
+                return true;
+            }
 
+            var detail = Framework.ProblemResponse.DetailOf(await response.Content.ReadAsStringAsync(cancellationToken)) ?? response.ReasonPhrase;
+            _status?.Update(s => s with { LastStatusCode = (int)response.StatusCode, LastProblem = detail });
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
             {
                 // The key lacks heartbeat:write, or the team has switched Monitoring off on the server - a
@@ -68,7 +82,6 @@ internal class HeartbeatReporter : BackgroundService
                 if (DateTime.UtcNow - _forbiddenLoggedAt >= ForbiddenLogInterval)
                 {
                     _forbiddenLoggedAt = DateTime.UtcNow;
-                    var detail = Framework.ProblemResponse.DetailOf(await response.Content.ReadAsStringAsync(cancellationToken)) ?? response.ReasonPhrase;
                     _logger.LogWarning("Quilt4Net refused heartbeats (403): {Detail} Logged at most once an hour.", detail);
                 }
                 return false;
@@ -83,6 +96,7 @@ internal class HeartbeatReporter : BackgroundService
         }
         catch (Exception e)
         {
+            _status?.Update(s => s with { LastStatusCode = null, LastProblem = e.Message });
             _logger.LogWarning(e, "Could not send a heartbeat to Quilt4Net; will retry next interval.");
             return false;
         }

@@ -69,4 +69,13 @@ public interface IRemoteContentCallService
     /// has been loaded so far per language (warm-up + lazy loads). For diagnostics/admin display.
     /// </summary>
     IReadOnlyDictionary<Guid, int> GetCacheCountsByLanguage();
+
+    /// <summary>
+    /// The cache per language (#144): how many values, how many of them are defaults, until when the first
+    /// stays fresh, and the language's last bulk load. A default implementation keeps implementers building.
+    /// </summary>
+    IReadOnlyList<ContentCacheLanguageStatus> GetCacheStatus() => [];
+
+    /// <summary>The cached values, for looking one up on a status page, optionally for one language.</summary>
+    IReadOnlyList<ContentCacheEntry> GetCachedEntries(Guid? languageKey = null) => [];
 }
