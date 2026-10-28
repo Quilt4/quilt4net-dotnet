@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Quilt4Net.Toolkit.Features.HeartbeatReporting;
 
 /// <summary>
-/// Reports this instance's capabilities to Quilt4Net on an interval, starting at once.
+/// Reports this instance's capabilities and metrics to Quilt4Net on an interval, starting at once.
 /// </summary>
 /// <remarks>
 /// A failed report is logged and retried on the next interval, never thrown: the application must
@@ -24,13 +25,15 @@ internal class HeartbeatReporter : BackgroundService
     private readonly HeartbeatReportingOptions _options;
     private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<HeartbeatReporter> _logger;
+    private readonly HeartbeatMetricReader _metrics;
 
-    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null)
+    public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null, IServiceScopeFactory scopeFactory = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
+        _metrics = new HeartbeatMetricReader(_options, logger, scopeFactory);
     }
 
     private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromHours(1);
@@ -52,8 +55,10 @@ internal class HeartbeatReporter : BackgroundService
     {
         try
         {
+            // Read at each heartbeat, so the heartbeat's interval is the metrics' frequency too.
+            var report = BuildReport() with { Metrics = await _metrics.ReadAsync(cancellationToken) };
             var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var response = await client.PostAsJsonAsync(Root, BuildReport(), cancellationToken);
+            using var response = await client.PostAsJsonAsync(Root, report, cancellationToken);
             if (response.IsSuccessStatusCode) return true;
 
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -91,6 +96,36 @@ internal class HeartbeatReporter : BackgroundService
             _options.Environment ?? _hostEnvironment?.EnvironmentName,
             _options.Instance ?? System.Environment.MachineName,
             entry?.Version?.ToString(),
-            _options.Capabilities ?? []);
+            _options.Capabilities ?? [])
+        {
+            MachineName = System.Environment.MachineName,
+            Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            OperatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            StartedUtc = ProcessStartUtc.Value,
+            IntervalSeconds = (int)Math.Round(_options.Interval.TotalSeconds),
+            ToolkitVersion = ToolkitVersion.Value,
+            ProcessorCount = System.Environment.ProcessorCount
+        };
     }
+
+    private static readonly Lazy<DateTime?> ProcessStartUtc = new(() =>
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return process.StartTime.ToUniversalTime();
+        }
+        catch (Exception e) when (e is InvalidOperationException or NotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    });
+
+    /// <summary>The informational version, without the build metadata after <c>+</c>, which is the commit.</summary>
+    private static readonly Lazy<string> ToolkitVersion = new(() =>
+    {
+        var assembly = typeof(HeartbeatReporter).Assembly;
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        return informational?.Split('+')[0] ?? assembly.GetName().Version?.ToString();
+    });
 }

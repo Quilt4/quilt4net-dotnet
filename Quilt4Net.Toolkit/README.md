@@ -499,12 +499,65 @@ one that can, say, `import` goes quiet.
 builder.AddQuilt4NetHeartbeatReporting(o => o.Capabilities = ["import", "export"]);
 ```
 
-A report is sent at start and then every `Interval`. A failed report is logged and retried on the next
+A report is sent at start and then every `Interval`. Besides the application, environment, instance and
+version, each tells Quilt4Net the machine name, runtime, operating system, when the process started, its
+interval, the Toolkit version and the processor count. Quilt4Net shows each instance with an uptime bar
+like an HTTP monitor's: a heartbeat more than two intervals and a minute late counts as a silence. A failed report is logged and retried on the next
 interval, never thrown — the application keeps running when Quilt4Net cannot be reached, and the missed
 heartbeat is what the rule is there to notice.
 
 This is not the Application Insights heartbeat in `Quilt4Net.Toolkit.Health` (`Quilt4Net:HealthApi:Heartbeat`),
 which sends availability telemetry.
+
+### Metrics
+
+Each heartbeat also carries **metrics**, which Quilt4Net keeps for 100 days and graphs per instance, the
+way it graphs an HTTP monitor's response times. The heartbeat's `Interval` is their frequency too.
+
+Built in, in percent:
+
+| Metric | Option | Default | |
+|--------|--------|---------|---|
+| `cpu.process` | `Cpu` has `Process` | on | This application's processor use over all cores, since the previous heartbeat. Same on every platform. |
+| `cpu.machine` | `Cpu` has `Machine` | off | The whole machine's, on Windows and Linux, from the second heartbeat on. Inside a container it is the host's. |
+| `memory.process` | `Memory` has `Process` | on | This application's working set over the memory available to it. |
+| `memory.machine` | `Memory` has `Machine` | off | All memory in use. Memory is measured against what is available to the process: the machine's, or the container's limit. |
+
+`Cpu` and `Memory` are flags enums: `None`, `Process`, `Machine` or `Both`.
+
+Add values of your own; each is read on every heartbeat:
+
+```csharp
+builder.AddQuilt4NetHeartbeatReporting(o =>
+{
+    o.Cpu = CpuMetric.Both;
+    o.Memory = MemoryMetric.Both;
+    o.AddMetric("queue.length", () => queue.Count, "items");
+    o.AddMetric("cache.hit-ratio", async ct => await cache.GetHitRatioAsync(ct), "percent");
+});
+```
+
+For values that need other services, implement `IHeartbeatMetricProvider`. It is resolved from
+dependency injection in a scope of its own at each heartbeat, so it can take anything in its
+constructor, a database context included:
+
+```csharp
+public class OrderQueueMetrics(IOrderQueueClient queue) : IHeartbeatMetricProvider
+{
+    public async Task<IEnumerable<HeartbeatMetric>> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        var status = await queue.GetStatusAsync(cancellationToken);
+        return [new("queue.length", status.Length, "items"), new("queue.oldest", status.OldestAge.TotalSeconds, "s")];
+    }
+}
+
+builder.AddQuilt4NetHeartbeatReporting(o => o.AddMetricProvider<OrderQueueMetrics>());
+```
+
+Every provider and every `AddMetric` value is read at the same time, sharing `MetricTimeout` (10 seconds
+by default); pass the token on to the calls you make. One that throws, is late, is not a finite number,
+or repeats a name already sent is logged and left out of that heartbeat; the heartbeat itself is always
+sent. Names are at most 64 characters, and a heartbeat carries at most 20 metrics.
 
 ### HeartbeatReportingOptions
 
@@ -520,6 +573,9 @@ Bound from `Quilt4Net:HeartbeatReporting`, falling back to `Quilt4Net:ApiKey` an
 | `Application` | entry assembly name | Application to report. |
 | `Environment` | host environment name | Environment to report. |
 | `Instance` | machine name | Tells two copies of the application apart. |
+| `Cpu` | `Process` | Which processor use to report: `None`, `Process`, `Machine` or `Both`. |
+| `Memory` | `Process` | Which memory use to report: `None`, `Process`, `Machine` or `Both`. |
+| `MetricTimeout` | 10 seconds | How long the application's own metrics may take at each heartbeat, all at once. |
 
 ## Health check client
 
