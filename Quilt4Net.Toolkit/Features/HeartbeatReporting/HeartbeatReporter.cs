@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Quilt4Net.Toolkit.Features.HeartbeatReporting;
 
 /// <summary>
-/// Reports this instance's capabilities to Quilt4Net on an interval, starting at once.
+/// Reports this instance's capabilities and metrics to Quilt4Net on an interval, starting at once.
 /// </summary>
 /// <remarks>
 /// A failed report is logged and retried on the next interval, never thrown: the application must
@@ -24,6 +24,7 @@ internal class HeartbeatReporter : BackgroundService
     private readonly HeartbeatReportingOptions _options;
     private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<HeartbeatReporter> _logger;
+    private readonly HeartbeatMetricReader _metrics;
 
     public HeartbeatReporter(IHttpClientFactory httpClientFactory, IOptions<HeartbeatReportingOptions> options, ILogger<HeartbeatReporter> logger, IHostEnvironment hostEnvironment = null)
     {
@@ -31,6 +32,7 @@ internal class HeartbeatReporter : BackgroundService
         _options = options.Value;
         _hostEnvironment = hostEnvironment;
         _logger = logger;
+        _metrics = new HeartbeatMetricReader(_options, logger);
     }
 
     private static readonly TimeSpan ForbiddenLogInterval = TimeSpan.FromHours(1);
@@ -52,8 +54,10 @@ internal class HeartbeatReporter : BackgroundService
     {
         try
         {
+            // Read at each heartbeat, so the heartbeat's interval is the metrics' frequency too.
+            var report = BuildReport() with { Metrics = await _metrics.ReadAsync(cancellationToken) };
             var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var response = await client.PostAsJsonAsync(Root, BuildReport(), cancellationToken);
+            using var response = await client.PostAsJsonAsync(Root, report, cancellationToken);
             if (response.IsSuccessStatusCode) return true;
 
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)

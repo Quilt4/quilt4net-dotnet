@@ -74,6 +74,105 @@ public class HeartbeatReporterTests
         accepted.Should().BeFalse("the application must keep running when Quilt4Net cannot be reached");
     }
 
+    [Fact]
+    public async Task A_report_carries_process_cpu_and_memory_by_default()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var sut = CreateSut(handler, new HeartbeatReportingOptions());
+        GC.Collect(); // Memory load is read from the collector, which knows nothing before its first collection.
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        var metrics = Metrics(handler);
+        metrics.Keys.Should().BeEquivalentTo(["cpu.process", "memory"]);
+        metrics.Values.Should().AllSatisfy(x => x.Value.Should().BeInRange(0, 100));
+        metrics.Values.Should().AllSatisfy(x => x.Unit.Should().Be("percent"));
+    }
+
+    [Fact]
+    public async Task Built_in_metrics_can_be_switched_off()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var sut = CreateSut(handler, new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false });
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        Metrics(handler).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_applications_own_metrics_are_read_on_each_heartbeat()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var queue = 3;
+        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false }
+            .AddMetric("queue.length", () => queue, "items")
+            .AddMetric("cache.hit-ratio", async ct => { await Task.Yield(); return 87.5; });
+        var sut = CreateSut(handler, options);
+
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+        queue = 9;
+        await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        var metrics = Metrics(handler);
+        metrics["queue.length"].Should().Be((9d, "items"), "the value is read when the heartbeat is sent, not when it was added");
+        metrics["cache.hit-ratio"].Should().Be((87.5, null));
+    }
+
+    [Fact]
+    public async Task A_metric_that_throws_is_left_out_and_the_heartbeat_is_still_sent()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var options = new HeartbeatReportingOptions { Cpu = CpuMetric.None, Memory = false }
+            .AddMetric("broken", (Func<double>)(() => throw new InvalidOperationException("no queue")))
+            .AddMetric("not.a.number", () => double.NaN)
+            .AddMetric("fine", () => 1);
+        var sut = CreateSut(handler, options);
+
+        var accepted = await sut.ReportOnceAsync(TestContext.Current.CancellationToken);
+
+        accepted.Should().BeTrue();
+        Metrics(handler).Keys.Should().Equal("fine");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("memory")]
+    [InlineData("CPU.Process")]
+    public void A_metric_name_that_is_empty_or_built_in_is_refused(string name)
+    {
+        var act = () => new HeartbeatReportingOptions().AddMetric(name, () => 1);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void A_metric_name_can_only_be_added_once()
+    {
+        var options = new HeartbeatReportingOptions().AddMetric("queue.length", () => 1);
+
+        var act = () => options.AddMetric("Queue.Length", () => 2);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*already added*");
+    }
+
+    [Fact]
+    public void At_most_seventeen_metrics_of_your_own_fit_beside_the_built_in_ones()
+    {
+        var options = new HeartbeatReportingOptions();
+        for (var i = 0; i < HeartbeatReportingOptions.MaxCustomMetrics; i++) options.AddMetric($"m{i}", () => i);
+
+        var act = () => options.AddMetric("one.more", () => 1);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    private static Dictionary<string, (double Value, string Unit)> Metrics(RecordingHandler handler) =>
+        JsonDocument.Parse(handler.LastBody).RootElement.GetProperty("metrics").EnumerateArray()
+            .ToDictionary(
+                x => x.GetProperty("name").GetString(),
+                x => (x.GetProperty("value").GetDouble(), x.GetProperty("unit").ValueKind == JsonValueKind.Null ? null : x.GetProperty("unit").GetString()));
+
     private static HeartbeatReporter CreateSut(HttpMessageHandler handler, HeartbeatReportingOptions options) =>
         new(new StubHttpClientFactory(handler), Options.Create(options), NullLogger<HeartbeatReporter>.Instance);
 
