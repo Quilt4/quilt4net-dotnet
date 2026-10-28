@@ -515,7 +515,7 @@ public class IssueRoadmapTests : BunitContext
         var figure = RoadmapLayout.Build(Roadmap(
             Route("r", now: [Item(1)], closed: [Item(2, terminal: true, state: "Closed")])));
 
-        figure.Columns.Should().Equal("Closed", "Now", "Next", "Later");
+        figure.Columns.Should().Equal("Done", "Now", "Next", "Later");
         var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
         byNumber[2].X.Should().BeLessThan(byNumber[1].X);
     }
@@ -526,7 +526,7 @@ public class IssueRoadmapTests : BunitContext
         var figure = RoadmapLayout.Build(Roadmap(
             Route("r", now: [Item(1)], later: [Item(2, terminal: true, state: "Closed")])));
 
-        figure.Columns.Should().Equal("Closed", "Now", "Next", "Later");
+        figure.Columns.Should().Equal("Done", "Now", "Next", "Later");
         var byNumber = figure.Items.ToDictionary(x => x.Item.Number);
         byNumber[2].X.Should().BeLessThan(byNumber[1].X);
     }
@@ -627,7 +627,7 @@ public class IssueRoadmapTests : BunitContext
         var shown = Render<IssueRoadmap>();
         var hidden = Render<IssueRoadmap>(p => p.Add(x => x.Filter, new IssueFilter { States = ["Todo"] }));
 
-        shown.FindAll("text[data-column]").Select(x => x.TextContent).Should().Equal("CLOSED", "NOW", "NEXT", "LATER");
+        shown.FindAll("text[data-column]").Select(x => x.TextContent).Should().Equal("DONE", "NOW", "NEXT", "LATER");
         hidden.FindAll("text[data-column]").Select(x => x.TextContent).Should().Equal("NOW", "NEXT", "LATER");
     }
 
@@ -973,6 +973,16 @@ public class IssueRoadmapTests : BunitContext
         Later = later ?? [],
         Closed = closed ?? []
     };
+
+    [Fact]
+    public void A_card_shows_its_place_in_the_order_when_the_server_sends_one()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1) with { Position = 7 }, Item(2)]));
+
+        var cut = Render<IssueRoadmap>();
+
+        cut.FindAll("[data-position]").Should().ContainSingle().Which.TextContent.Trim().Should().Be("7");
+    }
 
     private static RoadmapItemResponse Item(int number, bool terminal = false, bool quickWin = false, string assignedUserKey = null, string assignedUserName = null,
         string state = "Todo", RoadmapStateKind kind = RoadmapStateKind.NotStarted, string resolution = null, bool? resolutionIsSuccess = null,

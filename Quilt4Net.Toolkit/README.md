@@ -851,26 +851,26 @@ References travel on `CreateAsync` and `UpdateAsync` rather than through endpoin
 
 ### Workflow
 
-Each team has one workflow — a list of states plus the transitions allowed between them — seeded as `Todo → Doing → Closed`. Read it with `GetWorkflowAsync`, replace it with `SetWorkflowAsync`. A state change goes through `SetStateAsync` rather than `UpdateAsync` so the move can be checked; a transition the workflow does not permit is rejected, and the error names the states the issue can actually reach.
+Each team has one workflow — a list of states plus the transitions allowed between them — seeded as `Todo → Doing → Done`. Read it with `GetWorkflowAsync`, replace it with `SetWorkflowAsync`. A state change goes through `SetStateAsync` rather than `UpdateAsync` so the move can be checked; a transition the workflow does not permit is rejected, and the error names the states the issue can actually reach.
 
 A replacement workflow that would leave issues stranded in a state it no longer defines is rejected rather than applied.
 
 #### Closing says why
 
-A workflow has **one exit, not one per outcome**. `Todo → Doing → Closed`, with the reason held on the
-issue as a **resolution** — `Done`, `Won't do`, or whatever else a team declares:
+A workflow has **one exit, not one per outcome**. `Todo → Doing → Done`, with the reason held on the
+issue as a **resolution** — `Delivered`, `Won't do`, `No action`, or whatever else a team declares:
 
 ```csharp
 await issueService.SetStateAsync(87, new SetIssueStateRequest
 {
-    State = "Closed",
+    State = "Done",
     Resolution = "Won't do"
 });
 ```
 
 `Resolution` is **required moving into a terminal state and rejected moving anywhere else**, and
 reopening clears it — a closed issue with no reason is the ambiguity the field exists to remove, and
-defaulting it to `Done` would quietly record a delivery that never happened.
+defaulting it to `Delivered` would quietly record a delivery that never happened.
 
 The available resolutions come from the workflow, as `IssueWorkflowResolutionResponse { Name, Order,
 IsSuccess }`. The **names are the team's own**, like state names; what is not is `IsSuccess`, which
@@ -886,6 +886,25 @@ tracker's own term (GitHub's `not_planned`, Jira's `Won't Fix`) without a Toolki
 > nothing to judge** — the issue is open, or the server predates the field — and only an explicit
 > `false` licenses drawing an ending as abandoned. Treating `null` as "did not deliver" would repaint
 > every finished issue on every server that has not caught up.
+
+#### Which phase it is in
+
+Any non-terminal state may declare **sub-states**: the seed gives `Doing` the phases `In Progress`
+and `To Deploy`. They are declared per state as
+`IssueWorkflowStateResponse.SubStates`, and an issue carries its own as `IssueResponse.SubState`, with
+`SubStateSinceUtc` saying how long it has been there.
+
+```csharp
+// Within the state the issue is already in: no transition, only the phase changes.
+await issueService.SetStateAsync(87, new SetIssueStateRequest { State = "Doing", SubState = "To Deploy" });
+```
+
+A sub-state is **always optional** — an issue may hold none — and changing it needs no edge in the
+workflow, because the state's rules (claims, board columns, transitions) stay with the state. Moving to
+another state clears it unless the request names one of the target's. Naming the current state with
+`SubState = null` leaves it alone, so an older client re-sending the state to take a claim cannot wipe
+it; an empty string clears it. The terminal state has no sub-states of this kind: how an issue ended is
+its resolution, which stays required.
 
 #### Who is working on it
 
