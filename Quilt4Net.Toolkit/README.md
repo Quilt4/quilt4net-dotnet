@@ -967,6 +967,15 @@ older server.
 `Ready` (neither). Nothing or all three selected shows everything; narrowed to some, finished issues
 are left out.
 
+`IssueFilter.Limit` keeps at most that many of the issues with a place in the team's order
+(`RoadmapItemResponse.Position`), the first in it, after the other dimensions have run; `null` or
+anything below one is no limit. An issue with no place, such as a finished one, is left to the other
+dimensions, so against an older server that sends no positions the limit cuts nothing. It judges the
+set rather than one issue, so `Matches` ignores it: `IssueRoadmap` applies it to the cards it would
+draw, after the picked routes and before "hide cards with no links", and counts what it leaves off in
+its caption. An issue the map does not draw, such as one with no route, takes none of the limit. The
+positions on the cards are not renumbered, so they can skip.
+
 ### IssueOptions
 
 | Property | Default | Description |

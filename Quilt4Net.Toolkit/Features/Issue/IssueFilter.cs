@@ -40,8 +40,17 @@ public record IssueFilter
     /// </summary>
     public IReadOnlyCollection<IssueReadiness> Readiness { get; init; } = [];
 
+    /// <summary>
+    /// At most this many of the issues with a place in the team's order, the first in it, or
+    /// <c>null</c> (or anything below one) for no limit. An issue with no place, such as a finished
+    /// one, is left to the other dimensions. It is about the set rather than one issue, so
+    /// <see cref="Matches(RoadmapBand?, IssueImportance?, IssueEffort?, string)"/> does not judge it:
+    /// the view that ranks applies it, and a view that does not rank leaves it unset.
+    /// </summary>
+    public int? Limit { get; init; }
+
     /// <summary>Whether no dimension narrows anything.</summary>
-    public bool IsEmpty => Bands.Count == 0 && Importances.Count == 0 && Efforts.Count == 0 && States.Count == 0 && Readiness.Count == 0;
+    public bool IsEmpty => Bands.Count == 0 && Importances.Count == 0 && Efforts.Count == 0 && States.Count == 0 && Readiness.Count == 0 && Limit is null or < 1;
 
     /// <summary>
     /// Whether a band is shown. Separate from <see cref="Matches(RoadmapBand?, IssueImportance?, IssueEffort?, string)"/> so a view can drop a whole band

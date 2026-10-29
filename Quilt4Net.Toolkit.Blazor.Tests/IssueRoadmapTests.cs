@@ -739,6 +739,144 @@ public class IssueRoadmapTests : BunitContext
     }
 
     [Fact]
+    public void A_limit_keeps_the_first_issues_in_the_order_across_routes_and_bands()
+    {
+        // The first in the order are spread over both lanes and three bands, and the first card in a
+        // cell is not always among them: the limit ranks the whole map, not each cell.
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                Route("a", now: [Item(1) with { Position = 5 }, Item(2) with { Position = 1 }], later: [Item(3) with { Position = 2 }]),
+                Route("b", now: [Item(4) with { Position = 4 }], next: [Item(5) with { Position = 3 }])),
+            new IssueFilter { Limit = 3 });
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([2, 3, 5]);
+        figure.FilteredItemCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void A_limit_leaves_issues_without_a_place_in_the_order_to_the_other_filters()
+    {
+        var roadmap = Roadmap(Route("r",
+            now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }],
+            closed: [Item(3, terminal: true, state: "Closed")]));
+
+        var chosen = RoadmapLayout.Build(roadmap, new IssueFilter { States = ["Todo", "Closed"], Limit = 1 });
+        var notChosen = RoadmapLayout.Build(roadmap, new IssueFilter { States = ["Todo"], Limit = 1 });
+
+        chosen.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 3], "a finished issue has no place to rank, so the state filter decides");
+        chosen.Columns.Should().Equal("Done", "Now", "Next", "Later");
+        notChosen.Items.Select(x => x.Item.Number).Should().Equal(1);
+    }
+
+    [Fact]
+    public void A_limit_above_the_number_of_issues_keeps_every_one()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }], closed: [Item(3, terminal: true, state: "Closed")])),
+            new IssueFilter { Limit = 10 });
+
+        figure.Items.Should().HaveCount(3);
+        figure.FilteredItemCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void A_limit_counts_what_it_leaves_off_and_drops_their_edges()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                new[] { Edge(1, 2, IssueLinkKind.Blocks, "first") },
+                Route("r", now: [Item(1) with { Position = 1 }], next: [Item(2) with { Position = 2 }])),
+            new IssueFilter { Limit = 1 });
+
+        figure.Items.Select(x => x.Item.Number).Should().Equal(1);
+        figure.Edges.Should().BeEmpty();
+        figure.FilteredItemCount.Should().Be(1);
+        figure.FilteredEdgeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void A_limit_takes_the_first_of_what_the_other_filters_leave()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now:
+            [
+                Item(1, importance: IssueImportance.Nice) with { Position = 1 },
+                Item(2, importance: IssueImportance.Critical) with { Position = 2 },
+                Item(3, importance: IssueImportance.Critical) with { Position = 3 }
+            ])),
+            new IssueFilter { Importances = [IssueImportance.Critical], Limit = 1 });
+
+        figure.Items.Select(x => x.Item.Number).Should().Equal([2], "the first critical issue, not the first issue");
+    }
+
+    [Fact]
+    public void A_limit_takes_the_first_of_the_picked_routes()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                Route("first", now: [Item(1) with { Position = 1 }]),
+                Route("second", now: [Item(2) with { Position = 2 }, Item(3) with { Position = 3 }])),
+            new IssueFilter { Limit = 1 }, routeNames: ["second"]);
+
+        figure.Items.Select(x => x.Item.Number).Should().Equal(2);
+    }
+
+    [Fact]
+    public void Hiding_unlinked_cards_is_judged_after_the_limit()
+    {
+        // #3 is linked only to #4, which the limit leaves off, so #3 has no link the reader can see.
+        var figure = RoadmapLayout.Build(
+            Roadmap(
+                new[] { Edge(1, 2, IssueLinkKind.Blocks, "first"), Edge(3, 4, IssueLinkKind.Blocks, "first") },
+                Route("r", now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }, Item(3) with { Position = 3 }, Item(4) with { Position = 4 }])),
+            new IssueFilter { Limit = 3 }, hideUnlinked: true);
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 2]);
+    }
+
+    [Fact]
+    public void Without_positions_a_limit_cuts_nothing()
+    {
+        // A server from before the order was sent has no places to rank by.
+        var figure = RoadmapLayout.Build(Roadmap(Route("r", now: [Item(1), Item(2)])), new IssueFilter { Limit = 1 });
+
+        figure.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_network_view_draws_only_the_limited_cards()
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }, Item(3) with { Position = 3 }])),
+            new IssueFilter { Limit = 2 }, view: RoadmapView.Network);
+
+        figure.Items.Select(x => x.Item.Number).Should().BeEquivalentTo([1, 2]);
+        figure.FilteredItemCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void A_limit_below_one_draws_everything(int limit)
+    {
+        var figure = RoadmapLayout.Build(
+            Roadmap(Route("r", now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }])),
+            new IssueFilter { Limit = limit });
+
+        figure.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_caption_counts_the_cards_past_the_limit()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now: [Item(1) with { Position = 1 }, Item(2) with { Position = 2 }, Item(3) with { Position = 3 }]));
+
+        var cut = Render<IssueRoadmap>(p => p.Add(x => x.Filter, new IssueFilter { Limit = 1 }));
+
+        cut.Markup.Should().Contain("Hidden by the filter: 2 item(s).");
+    }
+
+    [Fact]
     public void No_two_cards_overlap_in_the_network_view()
     {
         var figure = RoadmapLayout.Build(Swarm(40), view: RoadmapView.Network);
