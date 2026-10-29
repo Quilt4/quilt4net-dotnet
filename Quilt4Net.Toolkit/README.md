@@ -938,6 +938,35 @@ a warning rather than failing, because the holder may simply have crashed.
 draws the same line between "somebody is on it" and "somebody was". `Claim` is optional and `null` when
 nobody holds the issue, which is also how every issue reads against a server that predates claims.
 
+#### What it is waiting for
+
+An open issue can be **flagged as waiting**: held up by a person, a date, another issue or something
+outside the team. The flag is not a state, so the issue keeps its state, phase and claim, and the
+board can tell the work that moves from the work that waits.
+
+```csharp
+await issueService.SetWaitingAsync(87, new SetIssueWaitingRequest
+{
+    Reason = "Record October once the month has closed",
+    WaitsOn = IssueWaitsOn.Date,
+    Until = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc)
+});
+
+await issueService.ClearWaitingAsync(87);
+```
+
+The reason is required; `WaitsOn` and `Until` are optional. Once `Until` has passed the flag reads as
+due (`IssueWaitingResponse.IsDue`, judged by the server); it is not cleared on its own, because somebody
+has to confirm the wait is over. Closing an issue clears its flag, and the terminal state refuses one.
+Moving between open states keeps it, so an issue put back in `Todo` with a date to resume carries that
+date. An issue another open issue `Blocks` is *blocked*, which is a condition of its own and needs no
+flag. `Waiting` is `null` when the issue is not flagged, which is also how every issue reads against an
+older server.
+
+`IssueFilter.Readiness` selects open work by that condition: `Blocked`, `Waiting` (flagged) and
+`Ready` (neither). Nothing or all three selected shows everything; narrowed to some, finished issues
+are left out.
+
 ### IssueOptions
 
 | Property | Default | Description |

@@ -38,6 +38,24 @@ public class IssueRoadmapTests : BunitContext
     }
 
     [Fact]
+    public void Readiness_keeps_the_blocked_the_waiting_or_the_ready_cards()
+    {
+        var flagged = Item(1) with { Waiting = new IssueWaitingResponse { Reason = "the vendor", SetUtc = DateTime.UtcNow } };
+        var roadmap = Roadmap(
+            [Edge(2, 3, IssueLinkKind.Blocks, "3 builds on 2"), Edge(4, 5, IssueLinkKind.Blocks, "a finished blocker holds nothing up")],
+            Route("r", now: [flagged, Item(2), Item(3), Item(5)], closed: [Item(4, terminal: true)]));
+
+        int[] Shown(params IssueReadiness[] readiness) =>
+            RoadmapLayout.Build(roadmap, new IssueFilter { Readiness = readiness }).Items.Select(x => x.Item.Number).ToArray();
+
+        Shown(IssueReadiness.Blocked).Should().BeEquivalentTo([3]);
+        Shown(IssueReadiness.Waiting).Should().BeEquivalentTo([1]);
+        Shown(IssueReadiness.Ready).Should().BeEquivalentTo([2, 5], "4 is finished, and a finished blocker holds nothing up");
+        Shown(IssueReadiness.Blocked, IssueReadiness.Waiting).Should().BeEquivalentTo([1, 3]);
+        Shown().Should().BeEquivalentTo([1, 2, 3, 4, 5]);
+    }
+
+    [Fact]
     public void A_lane_grows_with_its_deepest_band()
     {
         var shallow = RoadmapLayout.Build(Roadmap(Route("r", now: [Item(1)])));
@@ -982,6 +1000,26 @@ public class IssueRoadmapTests : BunitContext
         var cut = Render<IssueRoadmap>();
 
         cut.FindAll("[data-position]").Should().ContainSingle().Which.TextContent.Trim().Should().Be("7");
+    }
+
+    [Fact]
+    public void A_waiting_issue_carries_a_pennant_with_its_reason_and_turns_red_once_due()
+    {
+        _issueService.Roadmap = Roadmap(Route("r", now:
+        [
+            Item(1) with { Waiting = new IssueWaitingResponse { Reason = "the vendor's fix", WaitsOn = IssueWaitsOn.External, SetUtc = DateTime.UtcNow } },
+            Item(2) with { Waiting = new IssueWaitingResponse { Reason = "record October", WaitsOn = IssueWaitsOn.Date, Until = new DateTime(2026, 11, 2), IsDue = true, SetUtc = DateTime.UtcNow } },
+            Item(3)
+        ]));
+
+        var cut = Render<IssueRoadmap>();
+
+        var flags = cut.FindAll("[data-waiting]");
+        flags.Should().HaveCount(2, "issue 3 is not waiting");
+        flags[0].GetAttribute("data-tip").Should().Be("waiting on external: the vendor's fix");
+        flags[0].GetAttribute("data-due").Should().Be("false");
+        flags[1].GetAttribute("data-tip").Should().Be("waiting on date: record October, due since 2026-11-02");
+        flags[1].GetAttribute("data-due").Should().Be("true");
     }
 
     private static RoadmapItemResponse Item(int number, bool terminal = false, bool quickWin = false, string assignedUserKey = null, string assignedUserName = null,

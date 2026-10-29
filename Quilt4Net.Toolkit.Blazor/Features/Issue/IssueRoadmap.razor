@@ -212,6 +212,19 @@
                             }
                         }
 
+                        @* Waiting (#131): a pennant left of the effort, amber, red once its date has
+                           passed. The reason is the tooltip; the card has no room for a sentence. *@
+                        @if (item.Waiting is { } waiting)
+                        {
+                            var fx = placed.Right - (item.IsQuickWin ? 26 : 12) - (item.Effort.HasValue ? 26 : 0) - 10;
+                            var colour = waiting.IsDue ? "var(--rz-danger)" : "var(--rz-warning)";
+                            <g data-waiting data-due="@(waiting.IsDue ? "true" : "false")" data-tip="@WaitingTip(waiting)">
+                                <title>@WaitingTip(waiting)</title>
+                                <path d="M @N(fx) @N(placed.Y + 9) V @N(placed.Y + 22)" stroke="@colour" stroke-width="1.6"/>
+                                <path d="M @N(fx) @N(placed.Y + 9) H @N(fx + 9) L @N(fx + 6.5) @N(placed.Y + 12.5) L @N(fx + 9) @N(placed.Y + 16) H @N(fx) Z" fill="@colour"/>
+                            </g>
+                        }
+
                         @if (item.Effort.HasValue)
                         {
                             <g>
@@ -712,8 +725,19 @@
             parts.Add($"claimed by {ClaimantFor(item.Claim)}, last seen {Ago(item.Claim.LastSeenUtc)}{stale}");
         }
 
+        if (item.Waiting is { } waiting) parts.Add(WaitingTip(waiting));
         if (item.IsQuickWin) parts.Add("quick win");
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>The waiting flag in words: the reason, what on, and the date, said to be due once passed.</summary>
+    private static string WaitingTip(IssueWaitingResponse waiting)
+    {
+        var on = waiting.WaitsOn is { } kind ? $" on {kind.ToString().ToLowerInvariant()}" : string.Empty;
+        var until = waiting.Until is { } date
+            ? waiting.IsDue ? $", due since {date:yyyy-MM-dd}" : $", until {date:yyyy-MM-dd}"
+            : string.Empty;
+        return $"waiting{on}: {waiting.Reason}{until}";
     }
 
     private const double AvatarRadius = 9;

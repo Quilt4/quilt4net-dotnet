@@ -149,6 +149,9 @@ public record RoadmapItemResponse
     /// </remarks>
     public IssueClaimResponse Claim { get; init; }
 
+    /// <summary>The issue's waiting flag (#131), or <c>null</c> when it is not flagged.</summary>
+    public IssueWaitingResponse Waiting { get; init; }
+
     /// <summary>
     /// The band the issue sits in, also for an item listed under <see cref="RoadmapRouteResponse.Closed"/>,
     /// so a band filter treats an open and a finished issue alike. <c>null</c> from a server that

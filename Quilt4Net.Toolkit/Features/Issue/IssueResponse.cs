@@ -111,6 +111,12 @@ public record IssueResponse
     /// </remarks>
     public IssueClaimResponse Claim { get; init; }
 
+    /// <summary>
+    /// Set when the issue is flagged as waiting (#131), with what it waits for; <c>null</c> when it is
+    /// not. Not <c>required</c>, for the reason given on <see cref="References"/>.
+    /// </summary>
+    public IssueWaitingResponse Waiting { get; init; }
+
     /// <summary>When the issue was created (UTC).</summary>
     public required DateTime CreatedUtc { get; init; }
 

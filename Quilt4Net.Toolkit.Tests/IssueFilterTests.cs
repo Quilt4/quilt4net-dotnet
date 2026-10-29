@@ -29,6 +29,28 @@ public class IssueFilterTests
     }
 
     [Fact]
+    public void Readiness_selects_blocked_waiting_and_ready_work_and_leaves_finished_issues_out_once_narrowed()
+    {
+        new IssueFilter().IncludesReadiness(open: false, blocked: false, waiting: false).Should().BeTrue();
+        new IssueFilter().IsEmpty.Should().BeTrue("nothing selected is no choice");
+        new IssueFilter { Readiness = [IssueReadiness.Blocked, IssueReadiness.Waiting, IssueReadiness.Ready] }
+            .IncludesReadiness(open: false, blocked: false, waiting: false).Should().BeTrue("all three is everything");
+
+        var blocked = new IssueFilter { Readiness = [IssueReadiness.Blocked] };
+        blocked.IncludesReadiness(open: true, blocked: true, waiting: true).Should().BeTrue("blocked and flagged shows for either");
+        blocked.IncludesReadiness(open: true, blocked: false, waiting: true).Should().BeFalse();
+        blocked.IsEmpty.Should().BeFalse();
+
+        var ready = new IssueFilter { Readiness = [IssueReadiness.Ready] };
+        ready.IncludesReadiness(open: true, blocked: false, waiting: false).Should().BeTrue();
+        ready.IncludesReadiness(open: true, blocked: false, waiting: true).Should().BeFalse();
+        ready.IncludesReadiness(open: false, blocked: false, waiting: false).Should().BeFalse("a finished issue is not work to pick up");
+
+        new IssueFilter { Readiness = [IssueReadiness.Waiting] }
+            .Matches(RoadmapBand.Now, null, null, "Doing", open: true, blocked: false, waiting: true).Should().BeTrue();
+    }
+
+    [Fact]
     public void An_unsized_issue_is_hidden_once_an_effort_is_selected()
     {
         var filter = new IssueFilter { Efforts = [IssueEffort.S] };
