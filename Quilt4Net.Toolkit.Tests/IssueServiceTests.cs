@@ -83,6 +83,37 @@ public class IssueServiceTests
     }
 
     [Fact]
+    public async Task The_waiting_flag_is_set_and_cleared_on_its_own_endpoint()
+    {
+        string body = null;
+        var handler = new RecordingHandler(r =>
+        {
+            body = r.Content?.ReadAsStringAsync().Result;
+            return Json(SampleIssue);
+        });
+        var sut = CreateSut(handler);
+
+        await sut.SetWaitingAsync(5, new SetIssueWaitingRequest { Reason = "the vendor", WaitsOn = IssueWaitsOn.External }, TestContext.Current.CancellationToken);
+
+        handler.LastRequest.Method.Should().Be(HttpMethod.Post);
+        handler.LastRequest.RequestUri!.AbsolutePath.Should().Be("/Api/Issue/5/waiting");
+        body.Should().Contain("\"waitsOn\":\"External\"");
+
+        await sut.ClearWaitingAsync(5, TestContext.Current.CancellationToken);
+
+        handler.LastRequest.Method.Should().Be(HttpMethod.Delete);
+        handler.LastRequest.RequestUri!.AbsolutePath.Should().Be("/Api/Issue/5/waiting");
+    }
+
+    [Fact]
+    public async Task An_issue_from_a_server_without_waiting_flags_reads_as_not_waiting()
+    {
+        var sut = CreateSut(new RecordingHandler(_ => Json(SampleIssue)));
+
+        (await sut.GetAsync(1, TestContext.Current.CancellationToken)).Waiting.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Enums_are_sent_as_names_not_numbers()
     {
         string body = null;

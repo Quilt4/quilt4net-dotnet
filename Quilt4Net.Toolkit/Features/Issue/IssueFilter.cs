@@ -32,17 +32,39 @@ public record IssueFilter
     /// </summary>
     public IReadOnlyCollection<string> States { get; init; } = [];
 
+    /// <summary>
+    /// Which conditions of open work to show (#131): blocked, waiting, ready; empty, or all three,
+    /// for everything. An issue both blocked and waiting is shown for either. Narrowed to some, the
+    /// finished issues are left out, since they are not work to pick up. The caller says what an
+    /// issue is, through <see cref="IncludesReadiness"/>.
+    /// </summary>
+    public IReadOnlyCollection<IssueReadiness> Readiness { get; init; } = [];
+
     /// <summary>Whether no dimension narrows anything.</summary>
-    public bool IsEmpty => Bands.Count == 0 && Importances.Count == 0 && Efforts.Count == 0 && States.Count == 0;
+    public bool IsEmpty => Bands.Count == 0 && Importances.Count == 0 && Efforts.Count == 0 && States.Count == 0 && Readiness.Count == 0;
 
     /// <summary>
-    /// Whether a band is shown. Separate from <see cref="Matches"/> so a view can drop a whole band
+    /// Whether a band is shown. Separate from <see cref="Matches(RoadmapBand?, IssueImportance?, IssueEffort?, string)"/> so a view can drop a whole band
     /// rather than draw it empty.
     /// </summary>
     public bool IncludesBand(RoadmapBand band) => Bands.Count == 0 || Bands.Contains(band);
 
     /// <summary>Whether a workflow state is shown.</summary>
     public bool IncludesState(string state) => States.Count == 0 || States.Contains(state, StringComparer.Ordinal);
+
+    /// <summary>Whether an issue in this condition is shown.</summary>
+    /// <param name="open">The issue is not in a terminal state.</param>
+    /// <param name="blocked">An open issue blocks it.</param>
+    /// <param name="waiting">It carries a waiting flag.</param>
+    public bool IncludesReadiness(bool open, bool blocked, bool waiting)
+    {
+        if (Readiness.Count == 0 || Enum.GetValues<IssueReadiness>().All(Readiness.Contains)) return true;
+        if (!open) return false;
+
+        return (blocked && Readiness.Contains(IssueReadiness.Blocked))
+               || (waiting && Readiness.Contains(IssueReadiness.Waiting))
+               || (!blocked && !waiting && Readiness.Contains(IssueReadiness.Ready));
+    }
 
     /// <summary>
     /// Whether an issue with these values is shown. A <c>null</c> band means the source could not
@@ -53,6 +75,13 @@ public record IssueFilter
         && (Importances.Count == 0 || (importance != null && Importances.Contains(importance.Value)))
         && (Efforts.Count == 0 || (effort != null && Efforts.Contains(effort.Value)))
         && IncludesState(state);
+
+    /// <summary>
+    /// <see cref="Matches(RoadmapBand?, IssueImportance?, IssueEffort?, string)"/>, and the issue's
+    /// condition as <see cref="IncludesReadiness"/> takes it.
+    /// </summary>
+    public bool Matches(RoadmapBand? band, IssueImportance? importance, IssueEffort? effort, string state, bool open, bool blocked, bool waiting) =>
+        Matches(band, importance, effort, state) && IncludesReadiness(open, blocked, waiting);
 
     /// <summary>
     /// The default view of a workflow: every state that is not terminal. Finished work is opt-in,

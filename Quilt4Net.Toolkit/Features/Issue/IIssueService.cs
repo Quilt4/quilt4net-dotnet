@@ -54,6 +54,21 @@ public interface IIssueService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IssueResponse> SetStateAsync(int number, SetIssueStateRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Flags an issue as waiting (#131), or changes its flag. The issue keeps its state and claim.
+    /// </summary>
+    /// <param name="number">The issue to flag.</param>
+    /// <param name="request">What it waits for, on what, and until when.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IssueResponse> SetWaitingAsync(int number, SetIssueWaitingRequest request, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException($"{GetType().Name} does not implement {nameof(SetWaitingAsync)}.");
+
+    /// <summary>Clears an issue's waiting flag. Clearing an issue that has none changes nothing.</summary>
+    /// <param name="number">The issue to clear.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IssueResponse> ClearWaitingAsync(int number, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException($"{GetType().Name} does not implement {nameof(ClearWaitingAsync)}.");
+
     /// <summary>Declares a dependency from one issue to another.</summary>
     /// <param name="number">The issue the link leaves.</param>
     /// <param name="request">What the link points at, what it asserts, and why.</param>

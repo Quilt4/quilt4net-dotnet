@@ -87,7 +87,18 @@ internal static class RoadmapLayout
             .GroupBy(x => x.Name, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.First().Colour, StringComparer.Ordinal);
 
-        var routes = roadmap.Routes.Select(route => Sort(route, filter)).ToArray();
+        // What is blocked (#131): an open issue on the map blocks it - the board's rule.
+        var open = roadmap.Routes
+            .SelectMany(x => x.Now.Concat(x.Next).Concat(x.Later))
+            .Where(x => !x.IsTerminal)
+            .Select(x => x.Number)
+            .ToHashSet();
+        var blocked = roadmap.Edges
+            .Where(e => e.Kind == IssueLinkKind.Blocks && open.Contains(e.FromNumber))
+            .Select(e => e.ToNumber)
+            .ToHashSet();
+
+        var routes = roadmap.Routes.Select(route => Sort(route, filter, blocked)).ToArray();
 
         // Every route the filter leaves something in, whether or not it is picked: this is what a
         // host offers as the route choices, so it must not shrink to the routes already chosen.
@@ -183,7 +194,7 @@ internal static class RoadmapLayout
     /// shows. A terminal item a server still listed under its band is moved to Closed here, so an older
     /// server draws the same map as a current one.
     /// </summary>
-    private static SortedRoute Sort(RoadmapRouteResponse route, IssueFilter filter)
+    private static SortedRoute Sort(RoadmapRouteResponse route, IssueFilter filter, IReadOnlySet<int> blocked)
     {
         var byBand = new[] { route.Now, route.Next, route.Later }
             .Select((items, index) => items.Select(x => x.Band == null ? x with { Band = Bands[index] } : x).ToArray())
@@ -191,18 +202,19 @@ internal static class RoadmapLayout
 
         var closed = (route.Closed ?? [])
             .Concat(byBand.SelectMany(x => x).Where(x => x.IsTerminal))
-            .Where(x => Shows(filter, x))
+            .Where(x => Shows(filter, x, blocked))
             .ToArray();
 
         var bands = byBand
-            .Select(items => items.Where(x => !x.IsTerminal && Shows(filter, x)).ToArray())
+            .Select(items => items.Where(x => !x.IsTerminal && Shows(filter, x, blocked)).ToArray())
             .ToArray();
 
         return new SortedRoute(route.Name, closed, bands);
     }
 
-    private static bool Shows(IssueFilter filter, RoadmapItemResponse item) =>
-        filter.Matches(item.Band, item.Importance, item.Effort, item.State);
+    private static bool Shows(IssueFilter filter, RoadmapItemResponse item, IReadOnlySet<int> blocked) =>
+        filter.Matches(item.Band, item.Importance, item.Effort, item.State,
+            open: !item.IsTerminal, blocked: blocked.Contains(item.Number), waiting: item.Waiting != null);
 
     private sealed record SortedRoute(string Name, RoadmapItemResponse[] Closed, RoadmapItemResponse[][] Bands)
     {

@@ -50,6 +50,12 @@ internal class IssueService : IIssueService
     public async Task<IssueResponse> SetStateAsync(int number, SetIssueStateRequest request, CancellationToken cancellationToken = default)
         => await SendAsync<IssueResponse>(HttpMethod.Post, $"{Root}/{number}/state", request, cancellationToken);
 
+    public async Task<IssueResponse> SetWaitingAsync(int number, SetIssueWaitingRequest request, CancellationToken cancellationToken = default)
+        => await SendAsync<IssueResponse>(HttpMethod.Post, $"{Root}/{number}/waiting", request, cancellationToken);
+
+    public async Task<IssueResponse> ClearWaitingAsync(int number, CancellationToken cancellationToken = default)
+        => await SendAsync<IssueResponse>(HttpMethod.Delete, $"{Root}/{number}/waiting", null, cancellationToken);
+
     public async Task<IssueResponse> AddLinkAsync(int number, AddIssueLinkRequest request, CancellationToken cancellationToken = default)
         => await SendAsync<IssueResponse>(HttpMethod.Post, $"{Root}/{number}/link", request, cancellationToken);
 
