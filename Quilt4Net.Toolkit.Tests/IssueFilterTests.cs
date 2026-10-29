@@ -51,6 +51,22 @@ public class IssueFilterTests
     }
 
     [Fact]
+    public void A_limit_narrows_the_filter_but_judges_no_single_issue()
+    {
+        var filter = new IssueFilter { Limit = 50 };
+
+        filter.IsEmpty.Should().BeFalse();
+        filter.Matches(RoadmapBand.Later, null, null, "Closed").Should().BeTrue("the limit is about the set, which only the view can rank");
+    }
+
+    [Fact]
+    public void A_limit_below_one_is_no_limit()
+    {
+        new IssueFilter { Limit = 0 }.IsEmpty.Should().BeTrue();
+        new IssueFilter { Limit = -5 }.IsEmpty.Should().BeTrue();
+    }
+
+    [Fact]
     public void An_unsized_issue_is_hidden_once_an_effort_is_selected()
     {
         var filter = new IssueFilter { Efforts = [IssueEffort.S] };

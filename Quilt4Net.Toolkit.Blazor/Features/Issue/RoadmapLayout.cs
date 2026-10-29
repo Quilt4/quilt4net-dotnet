@@ -64,8 +64,8 @@ internal static class RoadmapLayout
     /// width on columns that cannot hold a card.
     /// </summary>
     /// <param name="hideUnlinked">
-    /// Drops a card with no edge left on the map once the filter has run. Judged after the filter,
-    /// since a link to a hidden card is not one the reader can see either.
+    /// Drops a card with no edge left on the map once the filter has run. Judged after the filter and
+    /// its limit, since a link to a hidden card is not one the reader can see either.
     /// </param>
     /// <param name="routeNames">The routes to draw. Null or empty draws every route.</param>
     /// <param name="linkKinds">The kinds of link to draw. Null or empty draws every kind.</param>
@@ -109,6 +109,14 @@ internal static class RoadmapLayout
 
         if (routeNames is { Count: > 0 })
             routes = routes.Where(x => routeNames.Contains(x.Name, StringComparer.Ordinal)).ToArray();
+
+        // The limit takes the first of what the reader is looking at, so it runs after the filter and
+        // the picked routes, and before "hide cards with no links", which judges what is drawn.
+        if (filter.Limit is { } limit and > 0)
+        {
+            var kept = FirstInOrder(routes, limit);
+            routes = routes.Select(x => x.Keep(kept)).ToArray();
+        }
 
         if (hideUnlinked)
         {
@@ -215,6 +223,27 @@ internal static class RoadmapLayout
     private static bool Shows(IssueFilter filter, RoadmapItemResponse item, IReadOnlySet<int> blocked) =>
         filter.Matches(item.Band, item.Importance, item.Effort, item.State,
             open: !item.IsTerminal, blocked: blocked.Contains(item.Number), waiting: item.Waiting != null);
+
+    /// <summary>
+    /// The cards a <see cref="IssueFilter.Limit"/> keeps: the first <paramref name="limit"/> by their
+    /// place in the order, across every route and band, and every card without a place. Ranked over
+    /// the whole map rather than per cell, so a limit of 50 is the first 50 the map would draw, not
+    /// the first few of each lane. An issue the map does not draw, with no route or in a lane left
+    /// out, holds a place in the order but takes none of the limit.
+    /// </summary>
+    private static HashSet<int> FirstInOrder(SortedRoute[] routes, int limit)
+    {
+        var shown = routes.SelectMany(x => x.Closed.Concat(x.Bands.SelectMany(b => b))).ToArray();
+
+        return shown
+            .Where(x => x.Position != null)
+            .OrderBy(x => x.Position)
+            .ThenBy(x => x.Number)
+            .Take(limit)
+            .Concat(shown.Where(x => x.Position == null))
+            .Select(x => x.Number)
+            .ToHashSet();
+    }
 
     private sealed record SortedRoute(string Name, RoadmapItemResponse[] Closed, RoadmapItemResponse[][] Bands)
     {
