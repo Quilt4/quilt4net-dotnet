@@ -16,21 +16,31 @@
     }
     else
     {
-        @if (_environments.Length > 0)
+        @if (ShowsKindFilter || _environments.Length > 0)
         {
-            <RadzenRow Style="margin-bottom: 1rem;">
-                <RadzenColumn Size="4">
-                    <RadzenText Text="Environment" TextStyle="TextStyle.Caption"/>
-                    <div title="Entries shared across every environment are always listed, whichever environment is selected.">
-                        <RadzenDropDown Data="@_environments"
-                                        TValue="string"
-                                        @bind-Value="_selectedEnvironment"
-                                        AllowClear="true"
-                                        Placeholder="@ConfigurationScope.AllEnvironmentsLabel"
-                                        Change="@(_ => ApplyFilter())"/>
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="1rem" AlignItems="AlignItems.End" Wrap="FlexWrap.Wrap" Style="margin-bottom: 1rem;">
+                @if (ShowsKindFilter)
+                {
+                    @* A feature toggle is an entry that is true or false, so toggles and the other values are one list with a filter, as on Quilt4Net Web. *@
+                    <RadzenSelectBar Data="@_kindOptions" @bind-Value="_kind" TValue="ConfigurationKind"
+                                     TextProperty="@nameof(KindOption.Text)" ValueProperty="@nameof(KindOption.Value)"
+                                     Change="@((ConfigurationKind _) => ApplyFilter())" />
+                }
+                @if (_environments.Length > 0)
+                {
+                    <div>
+                        <RadzenText Text="Environment" TextStyle="TextStyle.Caption"/>
+                        <div title="Entries shared across every environment are always listed, whichever environment is selected.">
+                            <RadzenDropDown Data="@_environments"
+                                            TValue="string"
+                                            @bind-Value="_selectedEnvironment"
+                                            AllowClear="true"
+                                            Placeholder="@ConfigurationScope.AllEnvironmentsLabel"
+                                            Change="@(_ => ApplyFilter())"/>
+                        </div>
                     </div>
-                </RadzenColumn>
-            </RadzenRow>
+                }
+            </RadzenStack>
         }
         <RadzenDataGrid Data="@_filtered" TItem="ConfigurationResponse">
             <Columns>
@@ -124,12 +134,17 @@
     private bool _showInstance;
     private string _hostEnvironmentName;
     private bool _canWrite;
+    private ConfigurationKind _kind = ConfigurationKind.All;
+    private KindOption[] _kindOptions = [];
 
     [CascadingParameter]
     public WhoAmIResponse Capabilities { get; set; }
 
+    /// <summary>Lists feature toggles only (true/false entries) and hides the All / Feature toggles / Other values filter.</summary>
     [Parameter]
     public bool TogglesOnly { get; set; }
+
+    private bool ShowsKindFilter => !TogglesOnly && _model.Length > 0;
 
     protected override void OnInitialized()
     {
@@ -159,7 +174,7 @@
     private async Task ReloadDataAsync()
     {
         var model = await RemoteConfigurationService.GetAsync();
-        _model = model.Where(x => !TogglesOnly || x.ValueType == "Boolean").ToArray();
+        _model = model.Where(x => !TogglesOnly || ConfigurationKindFilter.IsFeatureToggle(x)).ToArray();
         _environments = ConfigurationScope.AvailableEnvironments(_model);
         _showInstance = ConfigurationScope.ShowInstance(_model);
 
@@ -180,11 +195,26 @@
 
     private void ApplyFilter()
     {
-        _filtered = _model
+        var inEnvironment = _model
             .Where(x => ConfigurationScope.MatchesEnvironment(x.Environment, _selectedEnvironment))
             .ToArray();
+
+        // Counts follow the selected environment, so each option says what selecting it will show.
+        _kindOptions =
+        [
+            KindOptionFor(ConfigurationKind.All, "All", inEnvironment),
+            KindOptionFor(ConfigurationKind.FeatureToggles, "Feature toggles", inEnvironment),
+            KindOptionFor(ConfigurationKind.OtherValues, "Other values", inEnvironment)
+        ];
+
+        _filtered = inEnvironment.Where(x => ConfigurationKindFilter.Matches(x, _kind)).ToArray();
         StateHasChanged();
     }
+
+    private static KindOption KindOptionFor(ConfigurationKind kind, string label, ConfigurationResponse[] entries) =>
+        new(kind, $"{label} ({entries.Count(x => ConfigurationKindFilter.Matches(x, kind))})");
+
+    private record KindOption(ConfigurationKind Value, string Text);
 
     private async Task DeleteAsync(ConfigurationResponse context)
     {

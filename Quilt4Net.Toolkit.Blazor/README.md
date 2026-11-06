@@ -820,7 +820,9 @@ Use the `RemoteConfigurationAdmin` component to view and edit feature toggles an
 <RemoteConfigurationAdmin />
 ```
 
-Set `TogglesOnly="true"` to show only boolean toggles.
+A feature toggle is a configuration value that is true or false, so both are one list. A filter above the grid shows **All**, **Feature toggles** or **Other values**, each with its count for the selected environment, as on the configuration page of [Quilt4Net Web](https://quilt4net.com).
+
+Set `TogglesOnly="true"` to show only feature toggles, without the filter.
 
 ```razor
 <RemoteConfigurationAdmin TogglesOnly="true" />
