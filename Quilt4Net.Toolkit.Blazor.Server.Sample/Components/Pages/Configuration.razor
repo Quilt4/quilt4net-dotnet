@@ -9,12 +9,13 @@
 <h1>Remote configuration</h1>
 
 <p>
-    The <code>RemoteConfigurationAdmin</code> component displays a data grid of feature toggles
-    and configuration values. Changes are saved to <a href="@Options.Value.Quilt4NetAddress" target="_blank"><code>@Options.Value.Quilt4NetAddress</code></a>.
+    The <code>RemoteConfigurationAdmin</code> component lists every configuration value the application reads,
+    and changes are saved to <a href="@Options.Value.Quilt4NetAddress" target="_blank"><code>@Options.Value.Quilt4NetAddress</code></a>.
+</p>
+<p>
+    A feature toggle is a configuration value that is true or false: read it with <code>GetToggleAsync("MyFeature")</code>
+    and switch the feature on or off here. Numbers and text work the same way, read with <code>GetAsync("MaxRetries", 3)</code>.
+    The filter above the grid shows all of them, the feature toggles, or the other values.
 </p>
 
-<h3>Full configuration view</h3>
 <RemoteConfigurationAdmin />
-
-<h3>Toggles only</h3>
-<RemoteConfigurationAdmin TogglesOnly="true" />

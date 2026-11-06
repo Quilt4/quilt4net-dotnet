@@ -140,6 +140,73 @@ public class RemoteConfigurationAdminScopeTests : BunitContext
         cut.Markup.Should().Contain("worker-1");
     }
 
+    [Fact]
+    public void The_kind_filter_counts_feature_toggles_and_other_values()
+    {
+        _configuration.Entries =
+        [
+            Entry("Feature.A", environment: "Production"),
+            Entry("Feature.B", environment: "Production"),
+            Entry("MaxRetries", environment: "Production", valueType: "Int32"),
+        ];
+
+        var cut = RenderAdmin("Production");
+
+        KindOptions(cut).Should().Equal("All (3)", "Feature toggles (2)", "Other values (1)");
+    }
+
+    [Fact]
+    public void The_kind_counts_follow_the_selected_environment()
+    {
+        _configuration.Entries =
+        [
+            Entry("Feature.A", environment: "Production"),
+            Entry("MaxRetries", environment: "Development", valueType: "Int32"),
+        ];
+
+        var cut = RenderAdmin("Production");
+
+        KindOptions(cut).Should().Equal("All (1)", "Feature toggles (1)", "Other values (0)");
+    }
+
+    [Fact]
+    public void Choosing_feature_toggles_lists_only_true_false_entries()
+    {
+        _configuration.Entries =
+        [
+            Entry("Feature.A", environment: "Production"),
+            Entry("MaxRetries", environment: "Production", valueType: "Int32"),
+        ];
+
+        var cut = RenderAdmin("Production");
+        cut.Markup.Should().Contain("MaxRetries");
+
+        cut.FindAll(".rz-selectbar .rz-button").First(x => x.TextContent.Contains("Feature toggles")).Click();
+
+        cut.Markup.Should().Contain("Feature.A");
+        cut.Markup.Should().NotContain("MaxRetries");
+    }
+
+    [Fact]
+    public void Toggles_only_lists_feature_toggles_without_the_kind_filter()
+    {
+        _configuration.Entries =
+        [
+            Entry("Feature.A", environment: "Production"),
+            Entry("MaxRetries", environment: "Production", valueType: "Int32"),
+        ];
+
+        Services.AddSingleton<IHostEnvironment>(new StubHostEnvironment { EnvironmentName = "Production" });
+        var cut = Render<RemoteConfigurationAdmin>(p => p.Add(x => x.TogglesOnly, true));
+
+        cut.Markup.Should().Contain("Feature.A");
+        cut.Markup.Should().NotContain("MaxRetries");
+        cut.FindAll(".rz-selectbar").Should().BeEmpty();
+    }
+
+    private static string[] KindOptions(IRenderedComponent<RemoteConfigurationAdmin> cut) =>
+        cut.FindAll(".rz-selectbar .rz-button").Select(x => x.TextContent.Trim()).ToArray();
+
     private IRenderedComponent<RemoteConfigurationAdmin> RenderAdmin(string hostEnvironment)
     {
         Services.AddSingleton<IHostEnvironment>(new StubHostEnvironment { EnvironmentName = hostEnvironment });
@@ -147,7 +214,7 @@ public class RemoteConfigurationAdminScopeTests : BunitContext
         return Render<RemoteConfigurationAdmin>();
     }
 
-    private static ConfigurationResponse Entry(string key, string application = null, string environment = null, string instance = null)
+    private static ConfigurationResponse Entry(string key, string application = null, string environment = null, string instance = null, string valueType = "Boolean")
     {
         return new ConfigurationResponse
         {
@@ -157,7 +224,7 @@ public class RemoteConfigurationAdminScopeTests : BunitContext
             Instance = instance,
             Value = "true",
             DefaultValue = "true",
-            ValueType = "Boolean",
+            ValueType = valueType,
             LastUsed = null,
             Ttl = null,
         };
