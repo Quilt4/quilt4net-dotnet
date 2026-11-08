@@ -67,6 +67,11 @@ jobs:
         # --coverage only works because every test project references
         # Microsoft.Testing.Extensions.CodeCoverage — a missing extension reports "Zero tests ran"
         # rather than an unknown option, so read the counts below, not just the step's colour.
+        # Polling file watchers: every test host built with Host.CreateDefaultBuilder watches its
+        # appsettings files, and the runner allows only 128 inotify instances per user, so the
+        # suite failed with "The configured user limit (128) on the number of inotify instances".
+        env:
+          DOTNET_USE_POLLING_FILE_WATCHER: 'true'
         run: dotnet test -c Release --no-build -- --coverage --coverage-output-format cobertura
 
       - name: Upload coverage to Codecov
