@@ -48,6 +48,7 @@ internal class HealthService : IHealthService
         while (taskList.Count > 0)
         {
             var completedTask = await Task.WhenAny(taskList); // Get the first task that completes
+            cancellationToken.ThrowIfCancellationRequested();
             yield return BuildResponse(completedTask); // Return the completed task
             taskList.Remove(completedTask); // Remove the completed task from the list
         }
@@ -140,6 +141,11 @@ internal class HealthService : IHealthService
             _logger?.LogTrace("Complete check for {name} component after {elapsed}.", name, stopwatch.Elapsed);
             return new RunTaskResult { Name = name, Essential = component.Essential, Result = status, Elapsed = stopwatch.Elapsed };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller went away: no result, so nothing is cached for the next caller.
+            throw;
+        }
         catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
         {
             // Timed out (or the request was aborted). Report a failed result — mapped to
@@ -171,41 +177,40 @@ internal class HealthService : IHealthService
 
     private async Task<CheckResult> InvokeCheckAsync(Component component, CancellationToken cancellationToken)
     {
-        var hasTimeout = component.Timeout is { } timeout && timeout > TimeSpan.Zero;
+        var timeout = component.Timeout is { } value && value > TimeSpan.Zero ? value : (TimeSpan?)null;
 
-        // Fast path — no timeout and no cancellation-aware check: exactly the original behaviour.
-        if (!hasTimeout && component.CheckWithCancellationAsync == null)
+        using var boundCts = timeout != null || cancellationToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
+        if (timeout != null)
         {
-            return await component.CheckAsync(_serviceProvider);
+            boundCts.CancelAfter(timeout.Value);
         }
 
-        using var timeoutCts = hasTimeout ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
-        var token = cancellationToken;
-        if (timeoutCts != null)
+        var token = boundCts?.Token ?? CancellationToken.None;
+
+        // Created before the check starts, so a cooperative check sees its token cancel before the race ends.
+        var bound = boundCts == null ? null : Task.Delay(System.Threading.Timeout.Infinite, token);
+        var checkTask = StartCheck(component, token);
+        if (bound == null)
         {
-            timeoutCts.CancelAfter(component.Timeout.Value);
-            token = timeoutCts.Token;
+            return await checkTask;
         }
 
-        // Cancellation-aware check: on timeout (or request abort) the token cancels and the check can
-        // actually abort and free its resources.
-        if (component.CheckWithCancellationAsync != null)
-        {
-            return await component.CheckWithCancellationAsync(_serviceProvider, token);
-        }
-
-        // Plain check + timeout: it has no token so it can't be aborted, but we bound the wait by
-        // racing it against the timeout token — a hung check can't block the health fan-out. If it
-        // times out we observe its eventual fault out-of-band so it isn't an unobserved exception.
-        var checkTask = component.CheckAsync(_serviceProvider);
-        var completed = await Task.WhenAny(checkTask, Task.Delay(System.Threading.Timeout.Infinite, token));
+        var completed = await Task.WhenAny(checkTask, bound);
         if (completed == checkTask)
         {
             return await checkTask;
         }
 
         ObserveFault(checkTask);
-        throw new TimeoutException($"Health check '{component.Name}' did not complete within {component.Timeout.Value}.");
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new TimeoutException($"Health check '{component.Name}' did not complete within {timeout}.");
+    }
+
+    private Task<CheckResult> StartCheck(Component component, CancellationToken token)
+    {
+        return component.CheckWithCancellationAsync != null
+            ? Task.Run(() => component.CheckWithCancellationAsync(_serviceProvider, token), CancellationToken.None)
+            : Task.Run(() => component.CheckAsync(_serviceProvider), CancellationToken.None);
     }
 
     private static void ObserveFault(Task task)

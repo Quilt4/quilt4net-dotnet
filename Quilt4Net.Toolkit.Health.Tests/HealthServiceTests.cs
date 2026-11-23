@@ -247,14 +247,13 @@ public class HealthServiceTests
         //Assert
         result.Should().NotBeNull();
         result.Status.Should().Be(expectedStatus);
-        result.Components.First().Key.Should().Be("One");
-        result.Components.First().Value.Status.Should().Be(expectedStatus);
-        result.Components.First().Value.Details.FirstOrDefault(x => x.Key == "elapsed").Value.Should().NotBeNull();
-        result.Components.First().Value.Details.FirstOrDefault(x => x.Key == "message").Value.Should().Be(message);
-        result.Components.Last().Key.Should().Be("Other");
-        result.Components.Last().Value.Status.Should().Be(expectedStatus);
-        result.Components.Last().Value.Details.FirstOrDefault(x => x.Key == "elapsed").Value.Should().NotBeNull();
-        result.Components.Last().Value.Details.FirstOrDefault(x => x.Key == "message").Value.Should().Be(message);
+        result.Components.Keys.Should().BeEquivalentTo("One", "Other");
+        result.Components["One"].Status.Should().Be(expectedStatus);
+        result.Components["One"].Details.FirstOrDefault(x => x.Key == "elapsed").Value.Should().NotBeNull();
+        result.Components["One"].Details.FirstOrDefault(x => x.Key == "message").Value.Should().Be(message);
+        result.Components["Other"].Status.Should().Be(expectedStatus);
+        result.Components["Other"].Details.FirstOrDefault(x => x.Key == "elapsed").Value.Should().NotBeNull();
+        result.Components["Other"].Details.FirstOrDefault(x => x.Key == "message").Value.Should().Be(message);
     }
 
     [Fact]

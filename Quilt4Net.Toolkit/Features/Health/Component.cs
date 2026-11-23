@@ -52,9 +52,11 @@ public record Component
     /// <summary>
     /// Optional. Bounds how long the check may run. On timeout the component is reported as a failed
     /// <see cref="CheckResult"/> (mapped to Degraded/Unhealthy per <see cref="Essential"/>) with a
-    /// clear message, instead of hanging and holding resources. With
-    /// <see cref="CheckWithCancellationAsync"/> the check is actually cancelled; with a plain
-    /// <see cref="CheckAsync"/> the wait is bounded (the check itself cannot be aborted).
+    /// clear message, instead of hanging and holding resources. The bound holds on both paths and
+    /// counts from before the check is invoked, so time a check spends blocking before its first
+    /// <c>await</c> counts too. With <see cref="CheckWithCancellationAsync"/> the token is also
+    /// cancelled, so a cooperative check can abort and free its resources; a check that ignores it is
+    /// left to finish on its own while the component is already reported as timed out.
     /// Set to null (default) or <see cref="TimeSpan.Zero"/> for no timeout.
     /// </summary>
     public TimeSpan? Timeout { get; init; }
