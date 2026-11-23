@@ -1,5 +1,5 @@
 using Azure.Identity;
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Features.ApplicationInsights;
 using Xunit;
 

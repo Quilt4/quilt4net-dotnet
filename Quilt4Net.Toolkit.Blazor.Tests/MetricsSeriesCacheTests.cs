@@ -1,5 +1,5 @@
 using System;
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Blazor.Features.Metrics;
 using Quilt4Net.Toolkit.Features.ApplicationInsights;
 using Xunit;

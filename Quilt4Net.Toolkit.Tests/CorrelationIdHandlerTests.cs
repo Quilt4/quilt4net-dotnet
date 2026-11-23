@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit;
 using Quilt4Net.Toolkit.Framework;

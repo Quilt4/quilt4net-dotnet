@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Blazor;
 using Quilt4Net.Toolkit.Features.Content;
 using Xunit;

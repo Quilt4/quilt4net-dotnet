@@ -1,7 +1,7 @@
 using System.Globalization;
 using AngleSharp.Dom;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit.Blazor.Features.Issue;
 using Quilt4Net.Toolkit.Features.Issue;

@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Bunit;
 using Radzen;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit.Blazor.Features.Metrics;
 using Quilt4Net.Toolkit.Features.ApplicationInsights;

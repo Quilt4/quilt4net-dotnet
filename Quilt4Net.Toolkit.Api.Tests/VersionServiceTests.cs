@@ -1,6 +1,6 @@
 ﻿using System.Reflection;
 using AutoFixture;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Quilt4Net.Toolkit.Features.Api;

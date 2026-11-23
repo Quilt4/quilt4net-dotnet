@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -131,7 +131,7 @@ public class ComponentCacheAndTimeoutTests
     [Fact]
     public async Task Timeout_cancels_a_cancellation_aware_check()
     {
-        var observedCancellation = false;
+        var observedCancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var option = new Quilt4NetHealthApiOptions();
         option.AddComponent(new Component
         {
@@ -147,7 +147,7 @@ public class ComponentCacheAndTimeoutTests
                 }
                 catch (OperationCanceledException)
                 {
-                    observedCancellation = true;
+                    observedCancellation.TrySetResult();
                     throw;
                 }
                 return new CheckResult { Success = true };
@@ -161,7 +161,8 @@ public class ComponentCacheAndTimeoutTests
 
         sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
         result.Status.Should().Be(HealthStatus.Degraded);
-        observedCancellation.Should().BeTrue("the token must actually cancel the check so it can free its resources, not just abandon the wait");
+        var cancelled = () => observedCancellation.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        await cancelled.Should().NotThrowAsync("the token must actually cancel the check so it can free its resources, not just abandon the wait");
     }
 
     [Fact]

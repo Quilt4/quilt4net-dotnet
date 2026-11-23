@@ -1,5 +1,5 @@
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit.Features.Content;
 using Quilt4Net.Toolkit.Features.FeatureToggle;

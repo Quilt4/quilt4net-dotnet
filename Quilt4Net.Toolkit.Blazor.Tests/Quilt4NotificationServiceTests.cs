@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Features.Content;
 using Quilt4Net.Toolkit.Features.FeatureToggle;
 using Radzen;

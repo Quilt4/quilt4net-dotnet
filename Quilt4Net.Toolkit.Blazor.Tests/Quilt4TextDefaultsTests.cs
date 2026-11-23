@@ -1,6 +1,6 @@
 using System.Globalization;
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit.Blazor;
 using Quilt4Net.Toolkit.Features.Content;

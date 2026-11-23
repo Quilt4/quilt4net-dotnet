@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using Blazored.LocalStorage;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Quilt4Net.Toolkit.Features.Content;
 using Quilt4Net.Toolkit.Features.FeatureToggle;

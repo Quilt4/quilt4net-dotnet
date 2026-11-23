@@ -1,5 +1,5 @@
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Components;
 using Quilt4Net.Toolkit.Blazor.Framework;
 using Quilt4Net.Toolkit.Framework;
