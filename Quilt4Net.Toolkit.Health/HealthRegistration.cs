@@ -68,6 +68,10 @@ public static class HealthRegistration
         // itself is transient (its IServiceProvider must stay request-scoped for the checks).
         services.AddSingleton<ComponentCheckCache>();
 
+        // Keeps components with RefreshInBackground fresh; stops at once when none opts in.
+        services.AddSingleton<ComponentRefreshService>();
+        services.AddHostedService(sp => sp.GetRequiredService<ComponentRefreshService>());
+
         services.AddTransient<ILiveService, LiveService>();
         services.AddTransient<IReadyService, ReadyService>();
         services.AddTransient<IHealthService, HealthService>();

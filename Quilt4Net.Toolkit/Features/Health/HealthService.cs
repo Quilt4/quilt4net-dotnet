@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+﻿using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,24 +9,29 @@ namespace Quilt4Net.Toolkit.Features.Health;
 
 internal class HealthService : IHealthService
 {
+    private const string CheckedAtDetail = "checkedAt";
+
     private readonly IHostEnvironment _hostEnvironment;
     private readonly IServiceProvider _serviceProvider;
     private readonly IHostedServiceProbeRegistry _hostedServiceProbeRegistry;
     private readonly Quilt4NetHealthApiOptions _apiOption;
-    private readonly ILogger<HealthService> _logger;
     private readonly ComponentCheckCache _componentCheckCache;
+    private readonly ComponentRefreshService _componentRefreshService;
+    private readonly ComponentCheckRunner _runner;
 
-    public HealthService(IHostEnvironment hostEnvironment, IServiceProvider serviceProvider, IHostedServiceProbeRegistry hostedServiceProbeRegistry, Quilt4NetHealthApiOptions apiOption, ILogger<HealthService> logger = null, ComponentCheckCache componentCheckCache = null)
+    public HealthService(IHostEnvironment hostEnvironment, IServiceProvider serviceProvider, IHostedServiceProbeRegistry hostedServiceProbeRegistry, Quilt4NetHealthApiOptions apiOption, ILogger<HealthService> logger = null, ComponentCheckCache componentCheckCache = null, ComponentRefreshService componentRefreshService = null)
     {
         _hostEnvironment = hostEnvironment;
         _serviceProvider = serviceProvider;
         _hostedServiceProbeRegistry = hostedServiceProbeRegistry;
         _apiOption = apiOption;
-        _logger = logger;
         // In DI the singleton is injected; the fallback keeps direct construction (e.g. tests) working.
         // Per-component result caching only takes effect when this instance outlives a request, which
         // it does via the registered singleton.
         _componentCheckCache = componentCheckCache ?? new ComponentCheckCache(TimeProvider.System);
+        // Without the refresher (direct construction) RefreshInBackground falls back to plain caching.
+        _componentRefreshService = componentRefreshService;
+        _runner = new ComponentCheckRunner(logger);
     }
 
     public async IAsyncEnumerable<KeyValuePair<string, HealthComponent>> GetStatusAsync(Func<Component, bool> filter, bool includeProbes, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -39,11 +44,11 @@ internal class HealthService : IHealthService
             }
         }
 
-        var tasksFromServices = _apiOption.ComponentServices.SelectMany(x => ((IComponentService)_serviceProvider.GetService(x))?.GetComponents())
+        var tasksFromServices = ComponentSource.FromServices(_apiOption, _serviceProvider)
             .Where(filter ?? (_ => true))
             .Select(x => RunTaskAsync(x, cancellationToken));
         var tasksFromAdd = _apiOption.Components.Select(x => RunTaskAsync(x, cancellationToken));
-        var taskList = tasksFromServices.Union(tasksFromAdd).ToList();
+        var taskList = tasksFromServices.Concat(tasksFromAdd).ToList();
 
         while (taskList.Count > 0)
         {
@@ -68,6 +73,11 @@ internal class HealthService : IHealthService
         if (!string.IsNullOrEmpty(x.Result.Result.Message))
         {
             result.Value.Details.TryAdd("message", x.Result.Result.Message);
+        }
+
+        if (x.Result.CheckedAt is { } checkedAt)
+        {
+            result.Value.Details.TryAdd(CheckedAtDetail, checkedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
         }
 
         if (x.Result.Exception != null)
@@ -122,103 +132,15 @@ internal class HealthService : IHealthService
 
     private Task<RunTaskResult> RunTaskAsync(Component component, CancellationToken cancellationToken)
     {
-        var name = string.IsNullOrEmpty(component.Name) ? "Component" : component.Name;
+        var name = ComponentSource.NameOf(component);
+
+        if (_componentRefreshService != null && ComponentSource.IsRefreshedInBackground(component))
+        {
+            return _componentRefreshService.GetAsync(component, name, cancellationToken);
+        }
 
         // Reuse a fresh cached result within CacheDuration (and coalesce concurrent runs); when
         // caching is off this runs the check directly.
-        return _componentCheckCache.GetOrRunAsync(name, component.CacheDuration, () => RunCheckAsync(component, name, cancellationToken));
-    }
-
-    private async Task<RunTaskResult> RunCheckAsync(Component component, string name, CancellationToken cancellationToken)
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            _logger?.LogTrace("Starting check for {name} component.", name);
-            var status = await InvokeCheckAsync(component, cancellationToken);
-            stopwatch.Stop();
-            _logger?.LogTrace("Complete check for {name} component after {elapsed}.", name, stopwatch.Elapsed);
-            return new RunTaskResult { Name = name, Essential = component.Essential, Result = status, Elapsed = stopwatch.Elapsed };
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The caller went away: no result, so nothing is cached for the next caller.
-            throw;
-        }
-        catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
-        {
-            // Timed out (or the request was aborted). Report a failed result — mapped to
-            // Degraded/Unhealthy per Essential by BuildStatus — instead of hanging. No exception
-            // detail: a timeout is an expected, self-describing outcome, not a crash.
-            stopwatch.Stop();
-            _logger?.LogWarning("Timed out check for {name} component after {elapsed}.", name, stopwatch.Elapsed);
-            return new RunTaskResult
-            {
-                Name = name,
-                Essential = component.Essential,
-                Result = new CheckResult { Success = false, Message = $"Check timed out after {stopwatch.Elapsed}." },
-                Elapsed = stopwatch.Elapsed
-            };
-        }
-        catch (Exception exception)
-        {
-            stopwatch.Stop();
-            Guid? correlationId = null;
-            if (_logger != null)
-            {
-                correlationId = Guid.NewGuid();
-                _logger.LogError("Failed check for {name} component after {elapsed}. {message} [CorrelationId: {correlationId}]", name, stopwatch.Elapsed, exception.Message, correlationId);
-            }
-
-            return new RunTaskResult { Name = name, Essential = component.Essential, Result = new CheckResult { Success = false }, Elapsed = stopwatch.Elapsed, Exception = exception, CorrelationId = correlationId };
-        }
-    }
-
-    private async Task<CheckResult> InvokeCheckAsync(Component component, CancellationToken cancellationToken)
-    {
-        var timeout = component.Timeout is { } value && value > TimeSpan.Zero ? value : (TimeSpan?)null;
-
-        using var boundCts = timeout != null || cancellationToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
-        if (timeout != null)
-        {
-            boundCts.CancelAfter(timeout.Value);
-        }
-
-        var token = boundCts?.Token ?? CancellationToken.None;
-
-        // Created before the check starts, so a cooperative check sees its token cancel before the race ends.
-        var bound = boundCts == null ? null : Task.Delay(System.Threading.Timeout.Infinite, token);
-        var checkTask = StartCheck(component, token);
-        if (bound == null)
-        {
-            return await checkTask;
-        }
-
-        var completed = await Task.WhenAny(checkTask, bound);
-        if (completed == checkTask)
-        {
-            return await checkTask;
-        }
-
-        ObserveFault(checkTask);
-        cancellationToken.ThrowIfCancellationRequested();
-        throw new TimeoutException($"Health check '{component.Name}' did not complete within {timeout}.");
-    }
-
-    private Task<CheckResult> StartCheck(Component component, CancellationToken token)
-    {
-        return component.CheckWithCancellationAsync != null
-            ? Task.Run(() => component.CheckWithCancellationAsync(_serviceProvider, token), CancellationToken.None)
-            : Task.Run(() => component.CheckAsync(_serviceProvider), CancellationToken.None);
-    }
-
-    private static void ObserveFault(Task task)
-    {
-        _ = task.ContinueWith(
-            static t => { _ = t.Exception; },
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        return _componentCheckCache.GetOrRunAsync(name, component.CacheDuration, () => _runner.RunAsync(component, name, _serviceProvider, cancellationToken));
     }
 }
