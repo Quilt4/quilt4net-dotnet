@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 using Bogus;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;

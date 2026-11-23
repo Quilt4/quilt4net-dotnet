@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Blazor.Features.Configuration;
 using Quilt4Net.Toolkit.Features.FeatureToggle;
 using Xunit;

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using Moq;
 using Quilt4Net.Toolkit.Features.ApplicationInsights;
 using Quilt4Net.Toolkit.Mcp;

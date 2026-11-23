@@ -1,5 +1,5 @@
 using System.Net.Http.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Features.Api;
 using Quilt4Net.Toolkit.Features.Health;
 using Xunit;

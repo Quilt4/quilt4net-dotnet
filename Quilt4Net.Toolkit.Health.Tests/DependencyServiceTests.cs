@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Quilt4Net.Toolkit.Features.Api;
 using Quilt4Net.Toolkit.Features.Health;
 using Quilt4Net.Toolkit.Features.Health.Dependency;

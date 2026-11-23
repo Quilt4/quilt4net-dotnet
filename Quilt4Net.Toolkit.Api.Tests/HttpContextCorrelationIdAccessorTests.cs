@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Quilt4Net.Toolkit.Api.Framework;
 using Quilt4Net.Toolkit.Framework;

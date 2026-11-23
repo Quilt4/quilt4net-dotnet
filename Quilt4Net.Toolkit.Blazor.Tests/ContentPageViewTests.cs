@@ -1,5 +1,5 @@
 using Bunit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Quilt4Net.Toolkit.Blazor.Features.Content.Pages;
 using Quilt4Net.Toolkit.Features.Content;
