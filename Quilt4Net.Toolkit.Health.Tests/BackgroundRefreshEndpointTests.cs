@@ -58,6 +58,20 @@ public class BackgroundRefreshEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task No_background_service_is_hosted_when_no_component_can_opt_in()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = Environments.Development });
+        builder.AddQuilt4NetHealth(o =>
+        {
+            o.Certificate.SelfCheckEnabled = false;
+            o.AddComponent(new Component { Name = "Plain", CacheDuration = TimeSpan.FromMinutes(1), CheckAsync = _ => Task.FromResult(new CheckResult { Success = true }) });
+        });
+        await using var app = builder.Build();
+
+        app.Services.GetServices<IHostedService>().Should().NotContain(x => x is ComponentRefreshService);
+    }
+
+    [Fact]
     public async Task A_probe_gets_the_result_the_refresher_warmed_up_at_start()
     {
         var sw = Stopwatch.StartNew();
