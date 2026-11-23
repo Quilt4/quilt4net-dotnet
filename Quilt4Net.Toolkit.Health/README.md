@@ -98,10 +98,24 @@ public record Component
 
     /// <summary>Async function that performs the check.</summary>
     public required Func<IServiceProvider, Task<CheckResult>> CheckAsync { get; init; }
+
+    /// <summary>Optional. Used instead of CheckAsync; the token cancels on Timeout or when the request is aborted.</summary>
+    public Func<IServiceProvider, CancellationToken, Task<CheckResult>> CheckWithCancellationAsync { get; init; }
+
+    /// <summary>Optional. Reuse the last result for this long. Default: null (run on every probe).</summary>
+    public TimeSpan? CacheDuration { get; init; }
+
+    /// <summary>Optional. Answer from the last result and refresh it in the background. Needs CacheDuration.</summary>
+    public bool RefreshInBackground { get; init; }
+
+    /// <summary>Optional. Report the check as failed when it takes longer than this. Default: null (no limit).</summary>
+    public TimeSpan? Timeout { get; init; }
 }
 ```
 
 The `CheckAsync` function receives `IServiceProvider` so you can resolve any DI service within the check.
+Resolve services from it rather than capturing them, since a check can run outside the request (see
+[Slow checks](#slow-checks-timeout-caching-and-background-refresh)).
 
 `CheckResult` is returned from each check:
 
@@ -262,6 +276,55 @@ public class ComponentService : IComponentService
 | Quilt4Net Content/Config | `false` | Falls back to cached or default values. |
 | External payment API | `false` | Other features still work; payment can retry. |
 | Authentication provider | `true` | Users cannot log in without it. |
+
+### Slow checks: timeout, caching and background refresh
+
+Every component's check starts at the same moment, off the request thread, so one slow or blocking check
+does not hold up the others. Components come back in the order their checks finish.
+
+**`Timeout`** bounds how long a check may take. When it runs out the component is reported as failed
+(`Degraded` or `Unhealthy`, per `Essential`) with the message *Check timed out after …*. The time counts from
+before the check is called, so a check that blocks before its first `await` is cut off too. With
+`CheckWithCancellationAsync` the token is also cancelled, so a check that honours it can stop and free its
+connection; one that ignores it is left to finish on its own while the response goes out without it.
+
+**`CacheDuration`** reuses a result for that long, so a busy endpoint runs each check at most once per
+window, and concurrent probes share one run. When the cached result has expired, the next probe waits for a
+new one.
+
+**`RefreshInBackground`** stops even that wait. With it (and a `CacheDuration`), a probe always answers from the
+component's last result at once, and a refresh starts in the background when that result is `CacheDuration`
+old. A hosted service also runs the check once when the app starts and again whenever the result reaches
+`CacheDuration`, so it stays recent on an endpoint that is called only now and then. Only a probe that arrives
+before the very first result waits.
+
+```csharp
+o.AddComponent(new Component
+{
+    Name = "Mailbox",
+    Essential = false,
+    CacheDuration = TimeSpan.FromMinutes(5),
+    RefreshInBackground = true,
+    Timeout = TimeSpan.FromSeconds(30),
+    CheckWithCancellationAsync = async (sp, ct) =>
+    {
+        var mail = sp.GetRequiredService<IMailClient>();
+        await mail.SignInAsync(ct);
+        return new CheckResult { Success = true };
+    }
+});
+```
+
+- **Use it for slow, non-essential dependencies**: mail servers, third-party registers, anything that can take
+  seconds. On an essential component a stale `Healthy` could hide an outage for up to `CacheDuration` plus
+  `Timeout`.
+- **`Timeout` now bounds a check nobody waits on**, so a slow but working dependency can be given longer than a
+  probe would tolerate. A result is never older than about `CacheDuration` plus `Timeout` while the app runs.
+- **A refresh runs in its own service scope**, never the request's, because the request is over by then. The
+  check gets that scope's `IServiceProvider`. Components from an `IComponentService` are resolved again in that
+  scope, so services captured in their delegates are fresh too.
+- **`checkedAt`** in a cached component's details is the UTC time its result was produced, so a stale result is
+  visible: `"checkedAt": "2026-11-23T12:00:00.0000000Z"`.
 
 #### IConnectionService
 
